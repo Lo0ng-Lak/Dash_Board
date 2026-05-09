@@ -114,7 +114,7 @@ function RootComponent() {
   const navItems = [
     { to: "/", label: "Tổng quan", icon: "📊", exact: true },
     { to: "/domains", label: "Domain", icon: "🌐" },
-    { to: "/customers", label: "Khách hàng", icon: "👥" },
+    { to: "/customers", label: "Kháng GMC", icon: "👥" },
     { to: "/devs", label: "Dev / Nhân sự", icon: "🧑‍💻" },
     { to: "/shopify", label: "Shopify", icon: "🛒" },
     { to: "/wordpress", label: "WordPress", icon: "📝" },

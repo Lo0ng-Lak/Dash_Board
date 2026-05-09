@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query"; // Chuyển sang dùng useQuery
 import { useMemo, useState, useEffect } from "react";
 import { getAllData } from "../lib/dataService";
 
@@ -8,6 +9,7 @@ export const Route = createFileRoute("/domains")({
 
 const ITEMS_PER_PAGE = 10;
 
+// Giữ nguyên các hàm helper của Huy
 const RenderRebuildDots = ({ countString }: { countString: string }) => {
   const count = parseInt(countString.replace(/[^0-9]/g, "")) || 0;
   return (
@@ -24,47 +26,36 @@ const RenderRebuildDots = ({ countString }: { countString: string }) => {
 
 const calculateDaysLeft = (dateStr: string) => {
   if (!dateStr || dateStr === "—") return null;
-
-  // Xử lý nếu ngày có định dạng DD/MM/YYYY
   const parts = dateStr.split("/");
   let targetDate;
-
   if (parts.length === 3) {
-    // Chuyển về YYYY-MM-DD để trình duyệt nào cũng hiểu
     targetDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
   } else {
     targetDate = new Date(dateStr);
   }
-
   if (isNaN(targetDate.getTime())) return null;
-
   const today = new Date();
-  today.setHours(0, 0, 0, 0); // Đưa về đầu ngày để tính cho chuẩn
-
+  today.setHours(0, 0, 0, 0);
   const diffTime = targetDate.getTime() - today.getTime();
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
 function Dashboard() {
-  const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [filterStatus, setFilterStatus] = useState("all");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc"); // Thêm state sắp xếp
 
+  // 1. TÍCH HỢP USEQUERY (Đồng bộ 30s một lần)
+  const { data: rawData = [], isLoading, isFetching } = useQuery({
+    queryKey: ["domainsList"],
+    queryFn: () => getAllData(true),
+    refetchInterval: 30000,
+  });
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      const result = await getAllData();
-      setData(result);
-      setLoading(false);
-    };
-    fetchData();
-  }, []);
-
+  // 2. LOGIC LỌC & SẮP XẾP
   const filteredData = useMemo(() => {
-    return data.filter(item => {
+    let result = rawData.filter(item => {
       const matchesSearch =
         item.domain.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.dev.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -76,14 +67,16 @@ function Dashboard() {
 
       return matchesSearch && matchesStatus;
     });
-  }, [data, searchTerm, filterStatus]);
+
+    // Lọc từ cuối danh sách lên (Đảo chiều mảng)
+    return sortOrder === "desc" ? [...result].reverse() : result;
+  }, [rawData, searchTerm, filterStatus, sortOrder]);
 
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
   const currentItems = filteredData.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterStatus]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterStatus, sortOrder]);
 
-  // LOGIC HIỂN THỊ SỐ TRANG RÚT GỌN 
   const renderPagination = () => {
     const pages = [];
     const maxVisible = 3;
@@ -113,33 +106,60 @@ function Dashboard() {
     ));
   };
 
-  if (loading) return <div className="p-10 text-center font-medium">Đang tải dữ liệu hệ thống...</div>;
+  if (isLoading) return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">Đang tải dữ liệu hệ thống...</div>;
 
   return (
+
+
     <div className="min-h-screen bg-[#FDFCFB] p-6 text-slate-800 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
 
+        <div className="flex flex-col md:flex-row justify-between items-end gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">Quản Lý Domain</h1>
+            <p className="text-slate-500 font-medium text-sm">Hệ thống quản lý domain và thông tin liên quan.</p>
+          </div>
+
+        </div>
         {/* THANH TÌM KIẾM & BỘ LỌC */}
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="relative w-full md:w-96">
-            <span className="absolute left-3 top-2.5 text-slate-400 text-xs">🔍</span>
-            <input
-              type="text"
-              placeholder="Tìm kiếm domain, dev hoặc khách hàng..."
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+          <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+            <div className="relative w-full md:w-96">
+              <span className="absolute left-3 top-2.5 text-slate-400 text-xs">🔍</span>
+              <input
+                type="text"
+                placeholder="Tìm kiếm domain, dev hoặc khách hàng..."
+                className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            {/* NÚT LỌC TỪ CUỐI DANH SÁCH (SẮP XẾP) */}
+            <button
+              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+              className="flex items-center gap-2 border border-slate-200 rounded-lg px-4 py-2 text-sm bg-slate-50 hover:bg-white transition-colors font-medium text-slate-600"
+            >
+              {sortOrder === "desc" ? "⬇️ Mới nhất trước" : "⬆️ Cũ nhất trước"}
+            </button>
           </div>
-          <select
-            className="border border-slate-200 rounded-lg px-4 py-2 text-sm bg-white outline-none cursor-pointer font-medium text-slate-600"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-          >
-            <option value="all">Tất cả trạng thái</option>
-            <option value="active">🟢 Đang hoạt động (Active)</option>
-            <option value="canceled">🔴 Đã hủy (Canceled)</option>
-          </select>
+
+          <div className="flex items-center gap-4 w-full md:w-auto">
+            <select
+              className="border border-slate-200 rounded-lg px-4 py-2 text-sm bg-white outline-none cursor-pointer font-medium text-slate-600"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="all">Tất cả trạng thái</option>
+              <option value="active">🟢 Đang hoạt động</option>
+              <option value="canceled">🔴 Đã hủy</option>
+            </select>
+
+            {/* Báo hiệu Sync ngầm */}
+            <div className={`transition-opacity duration-500 ${isFetching ? 'opacity-100' : 'opacity-0'}`}>
+              <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+            </div>
+          </div>
         </div>
 
         {/* BẢNG DỮ LIỆU */}
@@ -157,125 +177,80 @@ function Dashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {currentItems.map((item, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                  {/* STT */}
-                  <td className="p-5 text-center text-slate-400 text-[10px]">
-                    {(currentPage - 1) * ITEMS_PER_PAGE + idx + 1}
-                  </td>
+              {currentItems.map((item, idx) => {
+                // Tính toán STT thực tế dựa trên logic sắp xếp
+                const displayIndex = sortOrder === "desc"
+                  ? rawData.length - ((currentPage - 1) * ITEMS_PER_PAGE + idx)
+                  : (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
 
-                  {/* DOMAIN & NỀN TẢNG - CẬP NHẬT THEO STYLE MỚI */}
-                  <td className="p-5">
-                    <div className="font-bold text-slate-800 lowercase text-[15px] mb-2">{item.domain}</div>
+                return (
+                  <tr key={item.domain + idx} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="p-5 text-center text-slate-400 text-[10px]">
+                      {displayIndex}
+                    </td>
 
-                  </td>
+                    <td className="p-5">
+                      <div className="font-bold text-slate-800 lowercase text-[15px] mb-1">{item.domain}</div>
+                    </td>
 
-                  {/* NHÂN SỰ */}
-                  <td className="p-5">
-                    <div className="text-slate-700 font-semibold">Dev: {item.dev}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 italic">Reg: {item.regBy}</div>
+                    <td className="p-5">
+                      <div className="text-slate-700 font-semibold text-xs">Dev: {item.dev}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 italic">Reg: {item.regBy}</div>
+                    </td>
 
-                  </td>
-
-                  {/* VẬN HÀNH */}
-                  <td className="p-5">
-                    <div className="space-y-2">
-                      <RenderRebuildDots countString={item.rebuildCount} />
-                      <div className="flex flex-wrap gap-1">
-                        {(() => {
-                          // Trường hợp: Rỗng hoặc khoảng trắng -> Chưa xác định
-                          if (!item.webhookStatus || item.webhookStatus === "") {
-                            return (
-                              <span className="text-[8px] bg-slate-50 text-slate-400 border border-slate-100 px-1.5 py-0.5 rounded font-black">
-                                CHƯA XÁC ĐỊNH
-                              </span>
-                            );
-                          }
-
-                          // Trường hợp: Đã thay
-                          if (item.webhookStatus === "Đã thay") {
-                            return (
-                              <span className="text-[8px] bg-purple-50 text-purple-600 border border-purple-100 px-1.5 py-0.5 rounded font-black">
-                                WEBHOOK (DONE)
-                              </span>
-                            );
-                          }
-
-                          // Trường hợp: Chưa thay webhook
-                          if (item.webhookStatus === "Chưa thay webhook") {
-                            return (
-                              <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded font-black">
-                                CHƯA THAY WEBHOOK
-                              </span>
-                            );
-                          }
-
-                          return null;
-                        })()}
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* HẠN SHOPIFY 1$ & PLAN */}
-                  <td className="p-5 text-center md:text-left">
-                    <div className="flex flex-col gap-1">
-                      <div className="font-bold text-slate-700 text-xs tabular-nums">
-                        {item.expiryDateShopify || "—"}
-                      </div>
-                      {!item.isCanceled && item.expiryDateShopify !== "—" && (
-                        <div className="mt-0.5">
-                          {(() => {
-                            const days = calculateDaysLeft(item.expiryDateShopify);
-                            if (days === null) return null;
-                            return (
-                              <span className={`text-[10px] font-bold uppercase tracking-tight ${days <= 7 ? 'text-red-500' : 'text-blue-500'}`}>
-                                Còn {days} ngày
-                              </span>
-                            );
-                          })()}
+                    <td className="p-5">
+                      <div className="space-y-2">
+                        <RenderRebuildDots countString={item.rebuildCount} />
+                        <div className="flex flex-wrap gap-1">
+                          {item.webhookStatus === "Đã thay" ? (
+                            <span className="text-[8px] bg-purple-50 text-purple-600 border border-purple-100 px-1.5 py-0.5 rounded font-black">WEBHOOK (DONE)</span>
+                          ) : item.webhookStatus === "Chưa thay webhook" ? (
+                            <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded font-black">CHƯA THAY WEBHOOK</span>
+                          ) : (
+                            <span className="text-[8px] bg-slate-50 text-slate-400 border border-slate-100 px-1.5 py-0.5 rounded font-black">CHƯA XÁC ĐỊNH</span>
+                          )}
                         </div>
-                      )}
-                      <div className="text-[9px] text-slate-400 italic">Start: {item.startDate || "—"}</div>
-                    </div>
-                  </td>
+                      </div>
+                    </td>
 
-                  {/* HẠN DOMAIN */}
-                  <td className="p-5">
-                    <div className={`font-bold text-xs tabular-nums ${item.daysLeft <= 7 ? 'text-red-500' : 'text-slate-700'}`}>
-                      {item.expiryDateSheet || "—"}
-                    </div>
-                    <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded-md w-fit
-                    ${item.daysLeft <= 7 ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
-                      Còn {item.daysLeft} ngày
-                    </div>
-                  </td>
+                    <td className="p-5">
+                      <div className="flex flex-col gap-1">
+                        <div className="font-bold text-slate-700 text-xs tabular-nums">{item.expiryDateShopify || "—"}</div>
+                        {!item.isCanceled && item.expiryDateShopify !== "—" && (() => {
+                          const days = calculateDaysLeft(item.expiryDateShopify);
+                          return days !== null ? (
+                            <span className={`text-[10px] font-bold uppercase tracking-tight ${days <= 7 ? 'text-red-500' : 'text-blue-500'}`}>Còn {days} ngày</span>
+                          ) : null;
+                        })()}
+                        <div className="text-[9px] text-slate-400 italic font-medium">Start: {item.startDate || "—"}</div>
+                      </div>
+                    </td>
 
-                  {/* NỀN TẢNG */}
-                  <td className="p-5">
-                    <div >
-                      {/* Badge Nền tảng linh hoạt */}
+                    <td className="p-5">
+                      <div className={`font-bold text-xs tabular-nums ${item.daysLeft <= 7 ? 'text-red-500' : 'text-slate-700'}`}>
+                        {item.expiryDateSheet || "—"}
+                      </div>
+                      <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded-md w-fit ${item.daysLeft <= 7 ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
+                        Còn {item.daysLeft} ngày
+                      </div>
+                    </td>
+
+                    <td className="p-5">
                       {item.isCanceled && item.isHuyRegMoi ? (
-                        <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-500 rounded-full font-bold border border-red-100 line-through decoration-red-400">
-                          × Shopify (đã hủy)
-                        </span>
+                        <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-500 rounded-full font-bold border border-red-100 line-through decoration-red-400">× Shopify (đã hủy)</span>
                       ) : (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${item.type?.toLowerCase() === 'shopify'
-                          ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                          : 'bg-blue-50 text-blue-600 border-blue-100'
-                          }`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${item.type?.toLowerCase() === 'shopify' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
                           {item.type}
                         </span>
                       )}
-
-
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
-          {/* PHÂN TRANG (Giữ nguyên) */}
+          {/* PHÂN TRANG */}
           <div className="p-4 border-t flex items-center justify-between bg-[#F9FAF9]">
             <div className="text-[11px] text-slate-400 font-medium">
               Hiển thị <span className="text-slate-600 font-bold">{currentItems.length}</span> trên tổng số <span className="text-slate-600 font-bold">{filteredData.length}</span> domain
