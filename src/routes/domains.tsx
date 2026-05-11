@@ -54,7 +54,9 @@ function Dashboard() {
   });
 
   // 2. LOGIC LỌC & SẮP XẾP
+  // 2. LOGIC LỌC & SẮP XẾP
   const filteredData = useMemo(() => {
+    // BƯỚC 1: Lọc dữ liệu theo Search và Status trước
     let result = rawData.filter(item => {
       const matchesSearch =
         item.domain.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -68,9 +70,13 @@ function Dashboard() {
       return matchesSearch && matchesStatus;
     });
 
-    // Lọc từ cuối danh sách lên (Đảo chiều mảng)
+    // BƯỚC 2: Xử lý hiển thị "Ngược" hay "Xuôi"
+    // Mặc định muốn Cũ nhất ở đầu (thứ tự tự nhiên của dataService hiện tại đang bị đảo)
+    // Nếu sortOrder là "asc" (Cũ nhất trước), ta giữ nguyên mảng result
+    // Nếu sortOrder là "desc" (Mới nhất trước), ta mới đảo ngược mảng
     return sortOrder === "desc" ? [...result].reverse() : result;
   }, [rawData, searchTerm, filterStatus, sortOrder]);
+
 
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
   const currentItems = filteredData.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -138,9 +144,9 @@ function Dashboard() {
             {/* NÚT LỌC TỪ CUỐI DANH SÁCH (SẮP XẾP) */}
             <button
               onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              className="flex items-center gap-2 border border-slate-200 rounded-lg px-4 py-2 text-sm bg-slate-50 hover:bg-white transition-colors font-medium text-slate-600"
+              className="..."
             >
-              {sortOrder === "desc" ? "⬇️ Mới nhất trước" : "⬆️ Cũ nhất trước"}
+              {sortOrder === "asc" ? "⬇️ Mới nhất trước" : "⬆️ Cũ nhất trước"}
             </button>
           </div>
 
@@ -178,11 +184,8 @@ function Dashboard() {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {currentItems.map((item, idx) => {
-                // Tính toán STT thực tế dựa trên logic sắp xếp
-                const displayIndex = sortOrder === "desc"
-                  ? rawData.length - ((currentPage - 1) * ITEMS_PER_PAGE + idx)
-                  : (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
-
+                // STT tăng dần: (Trang hiện tại - 1) * Số item mỗi trang + index hiện tại + 1
+                const displayIndex = (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
                 return (
                   <tr key={item.domain + idx} className="hover:bg-slate-50/50 transition-colors">
                     <td className="p-5 text-center text-slate-400 text-[10px]">

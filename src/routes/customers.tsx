@@ -25,6 +25,24 @@ function GMCPremiumDashboard() {
     refetchInterval: 30000,
   });
 
+  // Lấy danh sách các tháng duy nhất có trong dữ liệu để đổ vào Filter
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    gmcData.forEach(item => {
+      if (item.dateGMC && item.dateGMC !== "—") {
+        const [_, month, year] = item.dateGMC.split("/");
+        months.add(`${month}/${year}`);
+      }
+    });
+    return Array.from(months).sort((a, b) => {
+      const [m1, y1] = a.split("/").map(Number);
+      const [m2, y2] = b.split("/").map(Number);
+      return y2 - y1 || m2 - m1; // Sắp xếp tháng mới nhất lên đầu
+    });
+  }, [gmcData]);
+
+  const [monthFilter, setMonthFilter] = useState("all");
+
   // Tính ngày (Dùng chung cho cả Live Days và Proxy Days)
   const calculateDaysDiff = (targetDate: string) => {
     if (!targetDate || targetDate === "—") return null;
@@ -78,9 +96,16 @@ function GMCPremiumDashboard() {
       const matchesSearch = item.domain.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === "all" ? true : (statusFilter === "sus" ? item.status === "Đã Sus" : item.status !== "Đã Sus");
       const matchesDev = devFilter === "all" ? true : item.dev === devFilter;
-      return matchesSearch && matchesStatus && matchesDev;
+
+      // logic lọc theo tháng
+      const itemMonth = item.dateGMC && item.dateGMC !== "—"
+        ? `${item.dateGMC.split("/")[1]}/${item.dateGMC.split("/")[2]}`
+        : null;
+      const matchesMonth = monthFilter === "all" ? true : itemMonth === monthFilter;
+
+      return matchesSearch && matchesStatus && matchesDev && matchesMonth;
     }).reverse();
-  }, [gmcData, searchTerm, statusFilter, devFilter]);
+  }, [gmcData, searchTerm, statusFilter, devFilter, monthFilter]);
 
   const paginatedData = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -100,6 +125,61 @@ function GMCPremiumDashboard() {
           </div>
 
         </div>
+
+
+
+        {/* CÁC THẺ CHỈ SỐ TỔNG (STATS CARDS) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Tổng kháng về */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between relative group transition-all hover:shadow-md">
+            <div>
+              <div className="flex justify-between items-center">
+                <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Tổng kháng về</p>
+                <span className="text-lg opacity-40">📁</span>
+              </div>
+              <h2 className="text-2xl font-black text-slate-900 mt-1">{gmcData.length}</h2>
+            </div>
+            <div className="mt-3 pt-3 border-t border-slate-50">
+              <p className="text-[9px] font-bold text-slate-300 italic uppercase">Database System</p>
+            </div>
+          </div>
+
+          {/* GMC Còn Sống */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between relative group transition-all hover:shadow-md border-t-emerald-500/50 border-t-2">
+            <div>
+              <div className="flex justify-between items-center">
+                <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">GMC Còn Sống</p>
+                <span className="text-lg">🛡️</span>
+              </div>
+              <div className="flex items-baseline gap-2 mt-1">
+                <h2 className="text-2xl font-black text-emerald-600">{stats.live}</h2>
+                <span className="text-[10px] font-bold text-emerald-500/70">({((stats.live / gmcData.length) * 100).toFixed(1)}%)</span>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Hệ thống ổn định</p>
+            </div>
+          </div>
+
+          {/* Tổng chi phí Ads (Đã chuyển sang màu sáng) */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between relative group transition-all hover:shadow-md border-t-blue-500/50 border-t-2">
+            <div>
+              <div className="flex justify-between items-center">
+                <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Tổng chi phí Ads</p>
+                <span className="text-lg">💰</span>
+              </div>
+              <h2 className="text-2xl font-black text-blue-600 mt-1">
+                ${stats.totalCostUSD.toLocaleString('en-US', { minimumFractionDigits: 0 })}
+              </h2>
+            </div>
+            <div className="mt-3">
+              <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest bg-blue-50 d-inline px-2 py-0.5 rounded-md">Currency: USD</p>
+            </div>
+          </div>
+        </div>
+
+
 
         {/* BIỂU ĐỒ TỔNG HỢP & HIỆU SUẤT DEV */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -147,6 +227,16 @@ function GMCPremiumDashboard() {
             className="flex-1 px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl border border-transparent focus:border-blue-100 transition-all"
             onChange={(e) => setSearchTerm(e.target.value)}
           />
+          <select
+            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100 transition-colors"
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+          >
+            <option value="all">📅 TẤT CẢ THÁNG</option>
+            {availableMonths.map(m => (
+              <option key={m} value={m}>THÁNG {m}</option>
+            ))}
+          </select>
           <select
             className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-slate-50 outline-none border-none cursor-pointer"
             onChange={(e) => setFilterDev(e.target.value)}
@@ -225,7 +315,7 @@ function GMCPremiumDashboard() {
                       <div className="text-[15px] font-black text-slate-900">${item.cost || "0"}</div>
                     </td>
                     <td className="p-5">
-                      <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg uppercase">
+                      <span className="text-[10px] font-black text-indigo-600 bg-indigo-50/50 border border-indigo-100 px-3 py-1.5 rounded-lg uppercase tracking-wider">
                         {item.dev}
                       </span>
                     </td>

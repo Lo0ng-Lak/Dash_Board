@@ -6,7 +6,9 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  useLocation,
 } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 
 import appCss from "../styles.css?url";
 
@@ -120,6 +122,60 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
+  const location = useLocation();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Kiểm tra authentication khi component mount hoặc pathname thay đổi
+  useEffect(() => {
+    const checkAuth = () => {
+      const authToken = localStorage.getItem("authToken");
+      const isLoggedIn = !!authToken;
+      const isLoginPage = location.pathname === "/login";
+
+      setIsAuthenticated(isLoggedIn);
+
+      // Nếu chưa đăng nhập và không phải trang login, redirect đến login
+      if (!isLoggedIn && !isLoginPage) {
+        router.navigate({ to: "/login" });
+      }
+
+      setIsLoading(false);
+    };
+
+    checkAuth();
+  }, [location.pathname, router]);
+
+  // Hiển thị loading trong khi kiểm tra auth
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-2 text-sm text-muted-foreground">Đang tải...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Nếu ở trang login, không hiển thị sidebar
+  if (location.pathname === "/login") {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+      </QueryClientProvider>
+    );
+  }
+
+  // Layout bình thường với sidebar (chỉ khi authenticated)
+  if (!isAuthenticated) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+      </QueryClientProvider>
+    );
+  }
 
   const navItems = [
     { to: "/", label: "Tổng quan", icon: "📊", exact: true },
@@ -132,6 +188,12 @@ function RootComponent() {
     { to: "/reports", label: "Báo cáo", icon: "📈" },
     { to: "/settings", label: "Cài đặt", icon: "⚙️" },
   ];
+
+  const handleLogout = () => {
+    localStorage.removeItem("authToken");
+    setIsAuthenticated(false);
+    router.navigate({ to: "/login" });
+  };
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -161,14 +223,22 @@ function RootComponent() {
           </nav>
 
           {/* User profile luôn dính ở dưới đáy sidebar */}
-          <div className="p-4 border-t bg-slate-50/50 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-xs font-bold text-white border-2 border-white shadow-sm">
-              HN
+          <div className="p-4 border-t space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-xs font-bold text-white border-2 border-white shadow-sm">
+                HN
+              </div>
+              <div className="text-sm">
+                <div className="font-bold text-slate-800">Huy Ngấy</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Administrator</div>
+              </div>
             </div>
-            <div className="text-sm">
-              <div className="font-bold text-slate-800">Huy Ngấy</div>
-              <div className="text-[10px] text-slate-400 font-bold uppercase">Administrator</div>
-            </div>
+            <button
+              onClick={handleLogout}
+              className="w-full px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-all font-medium border border-slate-200 hover:border-slate-300"
+            >
+              Đăng Xuất
+            </button>
           </div>
         </aside>
 

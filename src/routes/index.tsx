@@ -45,11 +45,24 @@ function Main() {
     const wordPressCount = data.filter(d => d.type?.toLowerCase().includes('wordpress')).length;
     const otherPlatform = total - shopifyCount - wordPressCount;
 
-    const shopifyExp = data.filter(d => {
-      if (d.isCanceled) return false;
+
+
+
+    const shopifyExp = data.reduce((acc: any[], d) => {
+      // 1. Phải là Shopify và CHƯA hủy plan
+      const isShopify = d.type?.toLowerCase().includes('shopify');
+      if (!isShopify || d.isCanceled) return acc;
+
+      // 2. Tính số ngày một lần duy nhất
       const days = calculateDaysLeft(d.expiryDateShopify);
-      return days !== null && days <= 15;
-    }).map(d => ({ ...d, days: calculateDaysLeft(d.expiryDateShopify) }));
+
+      // 3. Nếu thỏa mãn điều kiện thời gian thì push vào mảng kết quả
+      if (days !== null && days <= 15) {
+        acc.push({ ...d, days });
+      }
+
+      return acc;
+    }, []);
 
     const domainExp = data.filter(d => {
       if (d.isCanceled) return false;
@@ -124,8 +137,15 @@ function Main() {
             <div className="h-[240px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={platformData} innerRadius={65} outerRadius={85} paddingAngle={8} dataKey="value">
-                    {platformData.map((entry, i) => <Cell key={i} fill={entry.color} cornerRadius={6} />)}
+                  <Pie
+                    data={platformData}
+                    innerRadius={65}
+                    outerRadius={85}
+                    paddingAngle={8}
+                    dataKey="value"
+                    cornerRadius={6}
+                  >
+                    {platformData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
                   <RechartsTooltip />
                   <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: '600', paddingTop: '20px' }} />
@@ -136,15 +156,23 @@ function Main() {
 
           <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-              <h3 className="text-[10px] font-bold text-emerald-600 mb-5 uppercase tracking-widest flex items-center gap-2">
-                Sắp hết hạn Shopify
+              <h3 className="text-[10px] font-bold text-emerald-600 mb-5 uppercase tracking-widest flex items-center justify-between">
+                <span className="flex items-center gap-2">🛒 Sắp hết hạn Shopify</span>
+                {/* Badge hiển thị tổng số con */}
+                <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[11px]">
+                  {stats.shopifyExp.length}
+                </span>
               </h3>
               <AlertList list={stats.shopifyExp} label="Shopify" />
             </div>
 
             <div className="bg-indigo-950 p-8 rounded-[32px] shadow-xl border border-indigo-900">
-              <h3 className="text-[10px] font-bold text-indigo-300 mb-5 uppercase tracking-widest">
-                Sắp hết hạn Domain
+              <h3 className="text-[10px] font-bold text-indigo-300 mb-5 uppercase tracking-widest flex items-center justify-between">
+                <span className="flex items-center gap-2">🌐 Sắp hết hạn Domain</span>
+                {/* Badge hiển thị tổng số con */}
+                <span className="bg-indigo-500/30 text-indigo-100 px-2 py-0.5 rounded-full text-[11px]">
+                  {stats.domainExp.length}
+                </span>
               </h3>
               <AlertList list={stats.domainExp} label="Domain" isDark />
             </div>

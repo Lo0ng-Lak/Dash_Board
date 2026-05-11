@@ -13,6 +13,7 @@ import { Route as WordpressRouteImport } from './routes/wordpress'
 import { Route as ShopifyRouteImport } from './routes/shopify'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as DomainsRouteImport } from './routes/domains'
 import { Route as DevsRouteImport } from './routes/devs'
@@ -37,6 +38,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ReportsRoute = ReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InvoicesRoute = InvoicesRouteImport.update({
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/devs': typeof DevsRoute
   '/domains': typeof DomainsRoute
   '/invoices': typeof InvoicesRoute
+  '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/devs': typeof DevsRoute
   '/domains': typeof DomainsRoute
   '/invoices': typeof InvoicesRoute
+  '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   '/devs': typeof DevsRoute
   '/domains': typeof DomainsRoute
   '/invoices': typeof InvoicesRoute
+  '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/devs'
     | '/domains'
     | '/invoices'
+    | '/login'
     | '/reports'
     | '/settings'
     | '/shopify'
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | '/devs'
     | '/domains'
     | '/invoices'
+    | '/login'
     | '/reports'
     | '/settings'
     | '/shopify'
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/devs'
     | '/domains'
     | '/invoices'
+    | '/login'
     | '/reports'
     | '/settings'
     | '/shopify'
@@ -141,6 +153,7 @@ export interface RootRouteChildren {
   DevsRoute: typeof DevsRoute
   DomainsRoute: typeof DomainsRoute
   InvoicesRoute: typeof InvoicesRoute
+  LoginRoute: typeof LoginRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   ShopifyRoute: typeof ShopifyRoute
@@ -175,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invoices': {
@@ -221,6 +241,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevsRoute: DevsRoute,
   DomainsRoute: DomainsRoute,
   InvoicesRoute: InvoicesRoute,
+  LoginRoute: LoginRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   ShopifyRoute: ShopifyRoute,

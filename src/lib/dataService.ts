@@ -22,30 +22,36 @@ export const getAllData = async (forceRefresh = false) => {
         const rebuildRows = Papa.parse(resRebuild, { header: true, skipEmptyLines: true }).data;
         const shopifyRows = Papa.parse(resShopify, { header: true, delimiter: "\t", skipEmptyLines: true }).data;
 
-        // --- BƯỚC QUAN TRỌNG: Lọc trùng lặp, giữ lại dòng cuối cùng ---
-        // Đảo ngược mảng rebuildRows để dòng ở dưới cùng lên đầu
-        const latestRebuildData = [...rebuildRows].reverse().reduce((acc: any[], current: any) => {
-            const domainName = current["Tên Domain"]?.trim();
-            if (!domainName) return acc;
-
-            // Nếu domain này chưa có trong accumulator (tức là đây là bản ghi mới nhất)
-            if (!acc.find(item => item["Tên Domain"]?.trim() === domainName)) {
-                acc.push(current);
+        // --- 1. LỌC REBUILD: Lấy dòng cuối cùng ---
+        const rebuildMap = new Map();
+        rebuildRows.forEach((row: any) => {
+            const domainName = row["Tên Domain"]?.trim();
+            if (domainName) {
+                rebuildMap.set(domainName.toLowerCase(), row); // Thằng sau đè thằng trước -> Lấy thằng cuối
             }
-            return acc;
-        }, []);
+        });
+        const latestRebuildData = Array.from(rebuildMap.values());
 
+        // --- 2. LỌC SHOPIFY: Lấy dòng cuối cùng (QUAN TRỌNG) ---
+        const shopifyMap = new Map();
+        shopifyRows.forEach((row: any) => {
+            const domainName = row["Web Shopify"]?.trim();
+            if (domainName) {
+                shopifyMap.set(domainName.toLowerCase(), row); // Thằng sau đè thằng trước -> Lấy thằng cuối
+            }
+        });
+
+        // --- 3. KẾT HỢP DỮ LIỆU ---
         const combined = latestRebuildData.map((r: any) => {
-            const domainName = r["Tên Domain"].trim();
+            const domainName = r["Tên Domain"].trim().toLowerCase();
 
-            const s: any = shopifyRows.find((item: any) =>
-                item["Web Shopify"]?.trim() === domainName
-            );
+            // Thay vì dùng .find() (lấy thằng đầu), ta lấy trực tiếp từ shopifyMap (đã là thằng cuối)
+            const s = shopifyMap.get(domainName);
 
             const daysLeft = parseInt(r["DaysLeft"]) || 0;
 
             return {
-                domain: domainName,
+                domain: r["Tên Domain"].trim(),
                 regBy: r["Tên Reg"] || "—",
                 expiryDateSheet: r["Hạn Domain"] || "—",
                 daysLeft: daysLeft,
@@ -61,7 +67,6 @@ export const getAllData = async (forceRefresh = false) => {
                 rebuildCount: r["Số lần làm lại web"] || "0",
             };
         });
-
         cachedData = combined;
         return combined;
     } catch (error) {
