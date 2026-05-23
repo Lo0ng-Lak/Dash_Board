@@ -4,9 +4,63 @@ const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD;
 const LINK_SHOPIFY = import.meta.env.VITE_LINK_TAB_SHOPIFY;
 const LINK_GMC_VE = import.meta.env.VITE_LINK_TAB_GMC_VE;
 let cachedData: any[] | null = null;
+let cachedAllData: any[] | null = null;
 let cachedGmcVeData: any[] | null = null;
 
-export const getAllData = async (forceRefresh = false) => {
+export const getAllDataWeb = async (forceRefresh = false) => {
+    if (cachedAllData && !forceRefresh) {
+        return cachedAllData;
+    }
+
+    try {
+        const timestamp = new Date().getTime();
+        const separatorRebuild = LINK_REBUILD.includes('?') ? '&' : '?';
+
+        let rawText = await fetch(`${LINK_REBUILD}${separatorRebuild}t=${timestamp}`).then(r => r.text());
+
+
+        rawText = rawText.replace(/("([^"]*?)")/g, (match) => {
+            return match.replace(/\r?\n|\r/g, " ");
+        });
+
+
+        const parsed = Papa.parse(rawText, {
+            header: true,
+            skipEmptyLines: 'greedy',
+            quoteChar: '"',
+            escapeChar: '"'
+        });
+
+        const rebuildRows = parsed.data as any[];
+
+        const allDomains = rebuildRows
+            .map((r: any) => {
+                const raw = r["Tên Domain"];
+                if (!raw) return null;
+
+                const domain = String(raw)
+                    .trim()
+                    .replace(/["'\u00A0]/g, "")
+                    .normalize('NFC');
+
+                if (domain.length === 0) return null;
+
+                return domain;
+            })
+            .filter(Boolean);
+
+
+
+        cachedAllData = allDomains;
+        return allDomains;
+    } catch (error) {
+        console.error("Fetch error:", error);
+        return [];
+    }
+};
+
+
+export const getLatestWebData = async (forceRefresh = false) => {
     if (cachedData && !forceRefresh) return cachedData;
 
     try {
@@ -88,20 +142,20 @@ export const getGMCVeData = async (forceRefresh = false) => {
         // Parse dữ liệu từ tab GMC mới
         const rows = Papa.parse(res, { header: true, skipEmptyLines: true }).data;
 
-        // Map dữ liệu theo các cột trong ảnh Huy gửi
+
         const formattedData = rows.map((r: any) => ({
-            proxy: (r["Proxy"] || "").trim(),               // Cột A
-            proxyExpiry: r["Hạn Proxy Phú"] || "—",         // Cột B
-            twoFA: r["2FA"] || "—",                         // Cột C
-            domain: (r["WEB"] || "").trim(),                // Cột D
-            dateGMC: r["Ngày về GMC"] || "—",               // E
-            regType: r["Loại đăng kí"] || "—",              // F
-            webType: r["Loại web"] || "—",                  // G
-            status: r["Tình Trạng Sus"] || "Chưa Sus",      // H
-            dev: r["DEV"] || "—",                           // I
-            adsDate: r["Ngày chạy Ads"] || "—",             // J
-            cost: r["Chi Phí"] || "0",                      // K
-            note: r["Note"] || ""                           // L
+            proxy: (r["Proxy"] || "").trim(),
+            proxyExpiry: r["Hạn Proxy Phú"] || "—",
+            twoFA: r["2FA"] || "—",
+            domain: (r["WEB"] || "").trim(),
+            dateGMC: r["Ngày về GMC"] || "—",
+            regType: r["Loại đăng kí"] || "—",
+            webType: r["Loại web"] || "—",
+            status: r["Tình Trạng Sus"] || "Chưa Sus",
+            dev: r["DEV"] || "—",
+            adsDate: r["Ngày chạy Ads"] || "—",
+            cost: r["Chi Phí"] || "0",
+            note: r["Note"] || ""
         }));
 
         cachedGmcVeData = formattedData;

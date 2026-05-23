@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer,
   Tooltip as RechartsTooltip, Legend
 } from "recharts";
-import { getAllData } from "../lib/dataService";
+import { getLatestWebData, getAllDataWeb } from "../lib/dataService";
 
 export const Route = createFileRoute("/")({
   component: Main,
@@ -30,14 +30,23 @@ function Main() {
   // 1. TỰ ĐỘNG ĐỒNG BỘ: Thay thế hoàn toàn useState và useEffect cũ
   const { data = [], isLoading, isFetching } = useQuery({
     queryKey: ["domainsData"],
-    queryFn: () => getAllData(true),
+    queryFn: () => getLatestWebData(true),
     refetchInterval: 30000, // 30 giây tự cập nhật một lần
     refetchOnWindowFocus: true,
+  });
+
+
+  const { data: allData = [] } = useQuery({
+    queryKey: ["domainsAll"],
+    queryFn: () => getAllDataWeb(false),
+    // Raw domains rarely change; avoid aggressive polling to keep counts stable
+    refetchOnWindowFocus: false,
   });
 
   // 2. LOGIC TÍNH TOÁN: Tự động chạy lại mỗi khi data từ useQuery thay đổi
   const stats = useMemo(() => {
     const total = data.length;
+    const rawTotal = allData.length;
     const active = data.filter(d => !d.isCanceled).length;
     const canceled = data.filter(d => d.isCanceled).length;
 
@@ -80,21 +89,25 @@ function Main() {
     return {
       total, active, canceled,
       shopifyCount, wordPressCount, otherPlatform,
-      shopifyExp, domainExp
+      shopifyExp, domainExp,
+      rawTotal
     };
-  }, [data]);
+  }, [data, allData]);
+
+
+
 
   const platformData = [
     { name: "Shopify", value: stats.shopifyCount, color: "#10b981" },
     { name: "WordPress", value: stats.wordPressCount, color: "#3b82f6" },
-    { name: "Nền tảng khác", value: stats.otherPlatform, color: "#94a3b8" },
+    { name: "Other Platforms", value: stats.otherPlatform, color: "#94a3b8" },
   ];
 
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
       <div className="flex flex-col items-center gap-4">
         <div className="animate-spin h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full" />
-        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Đang tải dữ liệu...</p>
+        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Loading data...</p>
       </div>
     </div>
   );
@@ -107,10 +120,10 @@ function Main() {
         <div className="border-b border-slate-200 pb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 uppercase">
-              Bảng Điều Khiển <span className="text-indigo-600">Hệ Thống</span>
+              Website Management <span className="text-indigo-600">Dashboard</span>
             </h1>
             <p className="text-slate-500 text-[11px] font-bold uppercase tracking-[0.2em] mt-1">
-              Theo dõi tài nguyên & Tình trạng vận hành Store
+              Website operational status
             </p>
           </div>
 
@@ -122,18 +135,19 @@ function Main() {
         </div>
 
         {/* 1. CÁC CHỈ SỐ TỔNG QUAN */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-5">
-          <StatCard label="Tổng Website" val={stats.total} sub="Tất cả domain" color="text-slate-900" icon="🌐" />
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-5">
+          <StatCard label="Total Raw Websites" val={stats.rawTotal} sub="All domains" color="text-slate-700" icon="🌐" />
+          <StatCard label="Total Filtered Websites" val={stats.total} sub="Cleaned data" color="text-slate-900" icon="📊" />
           <StatCard label="Shopify" val={stats.shopifyCount} sub="E-commerce" color="text-emerald-600" icon="🛍️" />
           <StatCard label="WordPress" val={stats.wordPressCount} sub="E-commerce" color="text-blue-600" icon="📝" />
-          <StatCard label="Khác" val={stats.otherPlatform} sub="Chưa phân loại" color="text-slate-500" icon="📁" />
-          <StatCard label="Đã tắt" val={stats.canceled} sub="Ngừng hoạt động" color="text-rose-500" icon="🛑" />
+          <StatCard label="Other" val={stats.otherPlatform} sub="Uncategorized" color="text-slate-500" icon="📁" />
+          <StatCard label="Inactive" val={stats.canceled} sub="Not active" color="text-rose-500" icon="🛑" />
         </div>
 
         {/* 2. BIỂU ĐỒ & CẢNH BÁO */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col items-center">
-            <h3 className="text-[10px] font-bold text-slate-400 mb-6 uppercase tracking-widest self-start">Tỷ lệ nền tảng</h3>
+            <h3 className="text-[10px] font-bold text-slate-400 mb-6 uppercase tracking-widest self-start">Platform Distribution</h3>
             <div className="h-[240px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -157,8 +171,8 @@ function Main() {
           <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
               <h3 className="text-[10px] font-bold text-emerald-600 mb-5 uppercase tracking-widest flex items-center justify-between">
-                <span className="flex items-center gap-2">🛒 Sắp hết hạn Shopify</span>
-                {/* Badge hiển thị tổng số con */}
+                <span className="flex items-center gap-2">🛒 Shopify Expiring Soon</span>
+                {/* Badge showing item count */}
                 <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[11px]">
                   {stats.shopifyExp.length}
                 </span>
@@ -168,8 +182,8 @@ function Main() {
 
             <div className="bg-indigo-950 p-8 rounded-[32px] shadow-xl border border-indigo-900">
               <h3 className="text-[10px] font-bold text-indigo-300 mb-5 uppercase tracking-widest flex items-center justify-between">
-                <span className="flex items-center gap-2">🌐 Sắp hết hạn Domain</span>
-                {/* Badge hiển thị tổng số con */}
+                <span className="flex items-center gap-2">🌐 Domain Expiring Soon</span>
+                {/* Badge showing item count */}
                 <span className="bg-indigo-500/30 text-indigo-100 px-2 py-0.5 rounded-full text-[11px]">
                   {stats.domainExp.length}
                 </span>
@@ -186,19 +200,19 @@ function Main() {
             <div className="flex items-center gap-6">
               <div className="h-14 w-1 rounded-full bg-indigo-500 hidden md:block" />
               <div>
-                <p className="text-indigo-300/60 text-[10px] uppercase font-bold tracking-widest mb-1">Tình trạng vận hành</p>
+                <p className="text-indigo-300/60 text-[10px] uppercase font-bold tracking-widest mb-1">Operational Status</p>
                 <div className="flex items-baseline gap-3">
                   <span className="text-4xl font-bold tracking-tighter">{stats.active}</span>
-                  <span className="text-indigo-200/70 text-sm font-medium">Đang hoạt động</span>
+                  <span className="text-indigo-200/70 text-sm font-medium">Active</span>
                   <span className="text-indigo-800 mx-2 text-xl">/</span>
                   <span className="text-2xl font-bold text-rose-400">{stats.canceled}</span>
-                  <span className="text-indigo-400 text-sm italic font-medium ml-1">Lưu trữ</span>
+                  <span className="text-indigo-400 text-sm italic font-medium ml-1">Archived</span>
                 </div>
               </div>
             </div>
             <div className="flex flex-wrap justify-center gap-4 w-full lg:w-auto">
-              <FooterBadge label="Cần gia hạn Shopify" count={stats.shopifyExp.length} color="text-emerald-400" />
-              <FooterBadge label="Cần gia hạn Domain" count={stats.domainExp.length} color="text-indigo-300" />
+              <FooterBadge label="Shopify Renewals" count={stats.shopifyExp.length} color="text-emerald-400" />
+              <FooterBadge label="Domain Renewals" count={stats.domainExp.length} color="text-indigo-300" />
             </div>
           </div>
         </div>
@@ -237,7 +251,7 @@ function AlertList({ list, label, isDark = false }: any) {
   if (list.length === 0) return (
     <div className="py-12 text-center opacity-30">
       <div className="text-xl mb-2">✨</div>
-      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Tất cả đều ổn</div>
+      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500">All good</div>
     </div>
   );
   return (
@@ -246,8 +260,8 @@ function AlertList({ list, label, isDark = false }: any) {
         <div key={i} className={`p-4 rounded-xl border transition-all ${isDark ? 'bg-indigo-900/40 border-indigo-800 hover:bg-indigo-900/60' : 'bg-slate-50 border-slate-200 hover:border-indigo-200'}`}>
           <div className={`text-[13px] font-bold truncate ${isDark ? 'text-indigo-100' : 'text-slate-800'}`}>{item.domain}</div>
           <div className="flex justify-between items-center mt-3">
-            <span className={`text-[10px] font-bold ${item.days <= 3 ? 'text-rose-400' : isDark ? 'text-indigo-300' : 'text-slate-500'}`}>Còn {item.days} ngày</span>
-            <span className={`text-[9px] font-bold uppercase px-3 py-1 rounded-lg ${item.days <= 3 ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white'}`}>Gia hạn</span>
+            <span className={`text-[10px] font-bold ${item.days <= 3 ? 'text-rose-400' : isDark ? 'text-indigo-300' : 'text-slate-500'}`}>{item.days} days left</span>
+            <span className={`text-[9px] font-bold uppercase px-3 py-1 rounded-lg ${item.days <= 3 ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white'}`}>Renew</span>
           </div>
         </div>
       ))}

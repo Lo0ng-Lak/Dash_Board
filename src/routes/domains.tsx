@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, useEffect } from "react";
-import { getAllData } from "../lib/dataService";
+import { getLatestWebData } from "../lib/dataService";
 
 export const Route = createFileRoute("/domains")({
   component: Dashboard,
@@ -49,7 +49,7 @@ function Dashboard() {
   // 1. TÍCH HỢP USEQUERY (Đồng bộ 30s một lần)
   const { data: rawData = [], isLoading, isFetching } = useQuery({
     queryKey: ["domainsList"],
-    queryFn: () => getAllData(true),
+    queryFn: () => getLatestWebData(true),
     refetchInterval: 30000,
   });
 
