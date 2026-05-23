@@ -16,40 +16,47 @@ export const getAllDataWeb = async (forceRefresh = false) => {
         const timestamp = new Date().getTime();
         const separatorRebuild = LINK_REBUILD.includes('?') ? '&' : '?';
 
-        let rawText = await fetch(`${LINK_REBUILD}${separatorRebuild}t=${timestamp}`).then(r => r.text());
+        const resRebuild = await fetch(`${LINK_REBUILD}${separatorRebuild}t=${timestamp}`, {
+            cache: "no-store"
+        }).then(r => r.text());
 
+        // Parse thủ công — tách dòng rồi tách cột theo TAB
+        // Không dùng PapaParse vì nó nuốt dòng khi gặp dấu " trong Address
+        const lines = resRebuild.split('\n');
 
-        rawText = rawText.replace(/("([^"]*?)")/g, (match) => {
-            return match.replace(/\r?\n|\r/g, " ");
-        });
+        const headerLine = lines[0];
+        const headers = headerLine.split('\t').map(h =>
+            h.replace(/[\u00A0\uFEFF\u200B\r]/g, '').trim()
+        );
 
+        const domainIndex = headers.indexOf('Tên Domain');
+        console.log("=== INDEX CỘT DOMAIN ===", domainIndex, "| headers:", headers);
 
-        const parsed = Papa.parse(rawText, {
-            header: true,
-            skipEmptyLines: 'greedy',
-            quoteChar: '"',
-            escapeChar: '"'
-        });
+        const allDomains: string[] = [];
 
-        const rebuildRows = parsed.data as any[];
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].replace(/\r$/, ''); // bỏ \r của Windows
+            if (line.trim().length === 0) continue;   // bỏ dòng hoàn toàn trống
 
-        const allDomains = rebuildRows
-            .map((r: any) => {
-                const raw = r["Tên Domain"];
-                if (!raw) return null;
+            const cols = line.split('\t');
+            const raw = cols[domainIndex];
+            if (!raw) continue;
 
-                const domain = String(raw)
-                    .trim()
-                    .replace(/["'\u00A0]/g, "")
-                    .normalize('NFC');
+            const domain = raw
+                .normalize('NFC')
+                .replace(/[\u00A0\uFEFF\u200B"']/g, '')
+                .trim();
 
-                if (domain.length === 0) return null;
+            if (domain.length > 0) {
+                allDomains.push(domain);
+            }
+        }
 
-                return domain;
-            })
-            .filter(Boolean);
-
-
+        console.log("=== KẾT QUẢ ===");
+        console.log("Tổng dòng raw (trừ header):", lines.length - 1);
+        console.log("Domain lấy được:", allDomains.length);
+        console.log("Chênh lệch:", (lines.length - 1) - allDomains.length);
+        console.log("Danh sách:", allDomains);
 
         cachedAllData = allDomains;
         return allDomains;
