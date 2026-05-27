@@ -1,195 +1,264 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { getGMCVeData } from "../lib/dataService";
+import { getGMCRegData } from "../lib/dataService";
 import { Pagination } from "../components/pagination";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie
 } from "recharts";
+
+interface GMCRegItem {
+  proxy: string;
+  proxyExpiry: string;
+  twoFA: string;
+  domain: string;
+  dateGMC: string;
+  webType: string;
+  status: string;
+  dev: string;
+  adsDate: string;
+  cost: string;
+  note: string;
+}
 
 export const Route = createFileRoute("/customers")({
   component: GMCPremiumDashboard,
 });
 
 function GMCPremiumDashboard() {
-  const [searchTerm, setSearchTerm] = useState("");
+  // ==========================================
+  // FILTERS & PAGINATION STATE MANAGEMENT
+  // ==========================================
+  const [searchDomain, setSearchDomain] = useState("");
+  const [devFilter, setDevFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [devFilter, setFilterDev] = useState("all");
+  const [webTypeFilter, setWebTypeFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState("all");
 
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const ITEMS_PER_PAGE = 10;
 
-  const { data: gmcData = [], isLoading } = useQuery({
-    queryKey: ["gmcVeData"],
-    queryFn: () => getGMCVeData(),
+  // Load GMC REG data from API
+  const { data: rawRegData = [], isLoading } = useQuery<GMCRegItem[]>({
+    queryKey: ["gmcRegData"],
+    queryFn: () => getGMCRegData(),
     refetchInterval: 30000,
   });
 
-  // Lấy danh sách các tháng duy nhất có trong dữ liệu để đổ vào Filter
-  const availableMonths = useMemo(() => {
-    const months = new Set<string>();
-    gmcData.forEach(item => {
-      if (item.dateGMC && item.dateGMC !== "—") {
-        const [_, month, year] = item.dateGMC.split("/");
-        months.add(`${month}/${year}`);
-      }
-    });
-    return Array.from(months).sort((a, b) => {
-      const [m1, y1] = a.split("/").map(Number);
-      const [m2, y2] = b.split("/").map(Number);
-      return y2 - y1 || m2 - m1; // Sắp xếp tháng mới nhất lên đầu
-    });
-  }, [gmcData]);
+  // Reverse array of original data (new records first)
+  const orderedFullData = useMemo(() => {
+    return [...rawRegData].reverse();
+  }, [rawRegData]);
 
-  const [monthFilter, setMonthFilter] = useState("all");
-
-  // Tính ngày (Dùng chung cho cả Live Days và Proxy Days)
-  const calculateDaysDiff = (targetDate: string) => {
-    if (!targetDate || targetDate === "—") return null;
-    const [day, month, year] = targetDate.split("/").map(Number);
-    const target = new Date(year, month - 1, day);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diff = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return diff;
+  // Helper function để check trạng thái thiết bị linh hoạt (Chấp nhận cả dữ liệu Việt/Anh từ API)
+  const isSuspended = (status: string) => {
+    if (!status) return false;
+    const s = status.toLowerCase();
+    return s === "đã sus" || s === "suspended" || s === "sus";
   };
 
-
-  // 1. TÍNH TOÁN NGÀY SỐNG
-  const calculateLiveDays = (regDate: string) => {
-    if (!regDate || regDate === "—") return 0;
-    const [day, month, year] = regDate.split("/").map(Number);
-    const start = new Date(year, month - 1, day);
-    const today = new Date();
-    const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    return diff > 0 ? diff : 0;
-  };
-
-  // 2. THỐNG KÊ CHI TIẾT THEO DEV (LỌC)
-  const devStats = useMemo(() => {
-    const stats: Record<string, any> = {};
-    gmcData.forEach(item => {
-      const name = item.dev || "Unknown";
-      if (!stats[name]) stats[name] = { name, live: 0, sus: 0, total: 0 };
-      stats[name].total += 1;
-      if (item.status === "Đã Sus") stats[name].sus += 1;
-      else stats[name].live += 1;
-    });
-    return Object.values(stats);
-  }, [gmcData]);
-
-  // 3. DATA CHO BIỂU ĐỒ
-  const chartData = useMemo(() => [
-    { name: "Đang sống", value: gmcData.filter(i => i.status !== "Đã Sus").length, color: "#10b981" },
-    { name: "Đã Sus", value: gmcData.filter(i => i.status === "Đã Sus").length, color: "#ef4444" }
-  ], [gmcData]);
-
-  const stats = useMemo(() => {
-    const live = gmcData.filter(i => i.status !== "Đã Sus").length;
-    const sus = gmcData.filter(i => i.status === "Đã Sus").length;
-    const totalCostUSD = gmcData.reduce((acc, cur) => acc + parseFloat(cur.cost || "0"), 0);
-    return { live, sus, totalCostUSD };
-  }, [gmcData]);
-
-  const filteredData = useMemo(() => {
-    return gmcData.filter(item => {
-      const matchesSearch = item.domain.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === "all" ? true : (statusFilter === "sus" ? item.status === "Đã Sus" : item.status !== "Đã Sus");
+  // ==========================================
+  // ZONE 1: FILTER BY DROPDOWN CATEGORY (Stats + Charts)
+  // ==========================================
+  const dropdownFilteredData = useMemo(() => {
+    return orderedFullData.filter((item: GMCRegItem) => {
       const matchesDev = devFilter === "all" ? true : item.dev === devFilter;
 
-      // logic lọc theo tháng
-      const itemMonth = item.dateGMC && item.dateGMC !== "—"
+      const matchesStatus = statusFilter === "all"
+        ? true
+        : (statusFilter === "sus" ? isSuspended(item.status) : !isSuspended(item.status));
+
+      const matchesWebType = webTypeFilter === "all" ? true : item.webType === webTypeFilter;
+
+      const itemMonthYear = item.dateGMC && item.dateGMC !== "—"
         ? `${item.dateGMC.split("/")[1]}/${item.dateGMC.split("/")[2]}`
         : null;
-      const matchesMonth = monthFilter === "all" ? true : itemMonth === monthFilter;
+      const matchesMonth = monthFilter === "all" ? true : itemMonthYear === monthFilter;
 
-      return matchesSearch && matchesStatus && matchesDev && matchesMonth;
-    }).reverse();
-  }, [gmcData, searchTerm, statusFilter, devFilter, monthFilter]);
+      return matchesDev && matchesStatus && matchesWebType && matchesMonth;
+    });
+  }, [orderedFullData, devFilter, statusFilter, webTypeFilter, monthFilter]);
 
-  const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredData.slice(start, start + itemsPerPage);
-  }, [filteredData, currentPage]);
+  // ==========================================
+  // ZONE 2: DYNAMIC STATISTICS & CHARTS CALCULATION
+  // ==========================================
+  const dynamicStats = useMemo(() => {
+    const total = dropdownFilteredData.length;
+    const live = dropdownFilteredData.filter((item: GMCRegItem) => !isSuspended(item.status)).length;
+    const sus = dropdownFilteredData.filter((item: GMCRegItem) => isSuspended(item.status)).length;
+    const totalCost = dropdownFilteredData.reduce((sum: number, item: GMCRegItem) => sum + parseFloat(item.cost || "0"), 0);
+    const totalUniqueDomains = new Set(dropdownFilteredData.map((item) => item.domain.toLowerCase().trim())).size;
 
-  if (isLoading) return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">Loading GMC Analytics...</div>;
+    return { total, live, sus, totalCost, totalUniqueDomains };
+  }, [dropdownFilteredData]);
+
+  // Structure data for pie chart
+  const pieChartStats = useMemo(() => [
+    { name: "Active", value: dynamicStats.live, color: "#10b981" },
+    { name: "Suspended", value: dynamicStats.sus, color: "#ef4444" }
+  ], [dynamicStats]);
+
+  // Structure data for bar chart productivity by Dev
+  const devProductivityStats = useMemo(() => {
+    const statsMap: Record<string, { name: string; total: number; live: number; sus: number; totalCost: number }> = {};
+
+    dropdownFilteredData.forEach((item: GMCRegItem) => {
+      const devName = item.dev || "Unknown";
+      if (!statsMap[devName]) {
+        statsMap[devName] = { name: devName, total: 0, live: 0, sus: 0, totalCost: 0 };
+      }
+      statsMap[devName].total += 1;
+
+      if (isSuspended(item.status)) {
+        statsMap[devName].sus += 1;
+      } else {
+        statsMap[devName].live += 1;
+      }
+      statsMap[devName].totalCost += parseFloat(item.cost || "0");
+    });
+    return Object.values(statsMap).sort((a, b) => b.total - a.total);
+  }, [dropdownFilteredData]);
+
+  // ==========================================
+  // ZONE 3: SEARCH INPUT FILTER (Only applied to table data)
+  // ==========================================
+  const finalFilteredTableData = useMemo(() => {
+    return dropdownFilteredData.filter((item: GMCRegItem) => {
+      return item.domain.toLowerCase().includes(searchDomain.toLowerCase());
+    });
+  }, [dropdownFilteredData, searchDomain]);
+
+  // Map domain frequency across entire system to label RE-REG
+  const globalDomainFrequencyMap = useMemo(() => {
+    const frequency: Record<string, number> = {};
+    orderedFullData.forEach((item) => {
+      const formattedDomain = item.domain.toLowerCase().trim();
+      frequency[formattedDomain] = (frequency[formattedDomain] || 0) + 1;
+    });
+    return frequency;
+  }, [orderedFullData]);
+
+  // Extract month list from source data for filter dropdown
+  const uniqueMonthsOptions = useMemo(() => {
+    const monthsSet = new Set<string>();
+    rawRegData.forEach((item: GMCRegItem) => {
+      if (item.dateGMC && item.dateGMC !== "—") {
+        const [_, month, year] = item.dateGMC.split("/");
+        monthsSet.add(`${month}/${year}`);
+      }
+    });
+    return Array.from(monthsSet).sort((a, b) => {
+      const [m1, y1] = a.split("/").map(Number);
+      const [m2, y2] = b.split("/").map(Number);
+      return y2 - y1 || m2 - m1;
+    });
+  }, [rawRegData]);
+
+  // Extract web type list from source data
+  const uniqueWebTypesOptions = useMemo(() => {
+    const typesSet = new Set<string>();
+    rawRegData.forEach((item: GMCRegItem) => item.webType && item.webType !== "—" && typesSet.add(item.webType));
+    return Array.from(typesSet);
+  }, [rawRegData]);
+
+  // Extract dev list from source data
+  const uniqueDevsOptions = useMemo(() => {
+    const devsSet = new Set<string>();
+    rawRegData.forEach((item: GMCRegItem) => item.dev && devsSet.add(item.dev));
+    return Array.from(devsSet);
+  }, [rawRegData]);
+
+  // Paginated data to render on table
+  const paginatedTableData = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return finalFilteredTableData.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [finalFilteredTableData, currentPage]);
+
+  if (isLoading) {
+    return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">Loading system data...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-8 text-slate-900">
       <div className="max-w-7xl mx-auto space-y-8">
 
+        {/* DASHBOARD TITLE */}
         <div className="flex flex-col md:flex-row justify-between items-end gap-4">
           <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Dashboard Kháng GMC</h1>
-            <p className="text-slate-500 font-medium text-sm">Hệ thống quản lý tài khoản và chi phí vận hành.</p>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">GMC REG Management</h1>
+            <p className="text-slate-500 font-medium text-sm">Track and manage the status of GMC account initialization.</p>
           </div>
-
         </div>
 
-
-
-        {/* CÁC THẺ CHỈ SỐ TỔNG (STATS CARDS) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Tổng kháng về */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between relative group transition-all hover:shadow-md">
+        {/* DYNAMIC STATS CARDS BLOCK */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
             <div>
-              <div className="flex justify-between items-center">
-                <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Tổng kháng về</p>
-                <span className="text-lg opacity-40">📁</span>
-              </div>
-              <h2 className="text-2xl font-black text-slate-900 mt-1">{gmcData.length}</h2>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Filtered Rows</p>
+              <h2 className="text-2xl font-black text-slate-900 mt-1">{dynamicStats.total}</h2>
             </div>
-            <div className="mt-3 pt-3 border-t border-slate-50">
-              <p className="text-[9px] font-bold text-slate-300 italic uppercase">Database System</p>
-            </div>
+            <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">All records</p>
           </div>
 
-          {/* GMC Còn Sống */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between relative group transition-all hover:shadow-md border-t-emerald-500/50 border-t-2">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-indigo-500 border-t-2">
             <div>
-              <div className="flex justify-between items-center">
-                <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">GMC Còn Sống</p>
-                <span className="text-lg">🛡️</span>
+              <p className="text-[9px] font-black uppercase text-indigo-500 tracking-[0.15em]">Actual Filtered Domains</p>
+              <div className="flex items-baseline gap-1 mt-1">
+                <h2 className="text-2xl font-black text-indigo-600">{dynamicStats.totalUniqueDomains}</h2>
               </div>
+            </div>
+            <p className="text-[9px] font-bold text-indigo-400 uppercase mt-3">Cleaned domains</p>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-emerald-500 border-t-2">
+            <div>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Live Domains</p>
               <div className="flex items-baseline gap-2 mt-1">
-                <h2 className="text-2xl font-black text-emerald-600">{stats.live}</h2>
-                <span className="text-[10px] font-bold text-emerald-500/70">({((stats.live / gmcData.length) * 100).toFixed(1)}%)</span>
+                <h2 className="text-2xl font-black text-emerald-600">{dynamicStats.live}</h2>
+                <span className="text-[10px] font-bold text-emerald-500/70">
+                  ({dynamicStats.total > 0 ? ((dynamicStats.live / dynamicStats.total) * 100).toFixed(1) : 0}%)
+                </span>
               </div>
             </div>
             <div className="mt-3 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Hệ thống ổn định</p>
+              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Active</p>
             </div>
           </div>
 
-          {/* Tổng chi phí Ads (Đã chuyển sang màu sáng) */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between relative group transition-all hover:shadow-md border-t-blue-500/50 border-t-2">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-red-500 border-t-2">
             <div>
-              <div className="flex justify-between items-center">
-                <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Tổng chi phí Ads</p>
-                <span className="text-lg">💰</span>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Suspended Domains</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <h2 className="text-2xl font-black text-red-600">{dynamicStats.sus}</h2>
+                <span className="text-[10px] font-bold text-red-500/70">
+                  ({dynamicStats.total > 0 ? ((dynamicStats.sus / dynamicStats.total) * 100).toFixed(1) : 0}%)
+                </span>
               </div>
+            </div>
+            <p className="text-[9px] font-bold text-red-400 uppercase mt-3">Suspended</p>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-blue-500 border-t-2">
+            <div>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Ads Cost</p>
               <h2 className="text-2xl font-black text-blue-600 mt-1">
-                ${stats.totalCostUSD.toLocaleString('en-US', { minimumFractionDigits: 0 })}
+                ${dynamicStats.totalCost.toLocaleString('en-US', { minimumFractionDigits: 0 })}
               </h2>
             </div>
-            <div className="mt-3">
-              <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest bg-blue-50 d-inline px-2 py-0.5 rounded-md">Currency: USD</p>
-            </div>
+            <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-3 bg-blue-50 w-max px-2 py-0.5 rounded-md">USD TOTAL</p>
           </div>
         </div>
 
-
-
-        {/* BIỂU ĐỒ TỔNG HỢP & HIỆU SUẤT DEV */}
+        {/* PIE CHART & BAR CHART BLOCK */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Tỉ lệ sống sót</h3>
+            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">System Ratio Overview</h3>
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={chartData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                    {chartData.map((entry, index) => (
+                  <Pie data={pieChartStats} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                    {pieChartStats.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -198,141 +267,173 @@ function GMCPremiumDashboard() {
               </ResponsiveContainer>
             </div>
             <div className="flex justify-around mt-4 text-[10px] font-bold uppercase">
-              <div className="flex items-center gap-2 text-emerald-600">● Live: {stats.live}</div>
-              <div className="flex items-center gap-2 text-red-500">● Sus: {stats.sus}</div>
+              <div className="flex items-center gap-2 text-emerald-600">● Active: {dynamicStats.live}</div>
+              <div className="flex items-center gap-2 text-red-500">● Suspended: {dynamicStats.sus}</div>
             </div>
           </div>
 
           <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Hiệu suất nhân sự (Dev)</h3>
+            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Account Productivity by Dev</h3>
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={devStats}>
+                <BarChart data={devProductivityStats}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
                   <YAxis hide />
                   <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                  <Bar dataKey="live" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} name="Đang sống" />
-                  <Bar dataKey="sus" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} name="Đã Sus" />
+                  <Bar dataKey="live" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} name="Active" />
+                  <Bar dataKey="sus" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} name="Suspended" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
         </div>
 
-        {/* LỌC NÂNG CAO */}
+        {/* FILTERS BAR */}
         <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-3 shadow-sm">
           <input
-            type="text" placeholder="Tìm Domain nhanh..."
+            type="text"
+            placeholder="Search for domain..."
             className="flex-1 px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl border border-transparent focus:border-blue-100 transition-all"
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchDomain}
+            onChange={(e) => { setSearchDomain(e.target.value); setCurrentPage(1); }}
           />
+
           <select
             className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100 transition-colors"
             value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
+            onChange={(e) => { setMonthFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">📅 TẤT CẢ THÁNG</option>
-            {availableMonths.map(m => (
-              <option key={m} value={m}>THÁNG {m}</option>
+            <option value="all">📅 ALL MONTHS</option>
+            {uniqueMonthsOptions.map(monthStr => (
+              <option key={monthStr} value={monthStr}>MONTH {monthStr}</option>
             ))}
           </select>
+
           <select
-            className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-slate-50 outline-none border-none cursor-pointer"
-            onChange={(e) => setFilterDev(e.target.value)}
+            className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600"
+            value={devFilter}
+            onChange={(e) => { setDevFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">TẤT CẢ DEV</option>
-            {devStats.map(d => <option key={d.name} value={d.name}>{d.name.toUpperCase()}</option>)}
+            <option value="all">👤 FILTER BY DEV (ALL)</option>
+            {uniqueDevsOptions.map(name => <option key={name} value={name}>{name.toUpperCase()}</option>)}
           </select>
+
           <select
-            className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-slate-50 outline-none border-none cursor-pointer"
-            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600"
+            value={webTypeFilter}
+            onChange={(e) => { setWebTypeFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">TRẠNG THÁI</option>
-            <option value="live">🟢 LIVE</option>
-            <option value="sus">🔴 SUS</option>
+            <option value="all">🌐 WEB TYPE (ALL)</option>
+            {uniqueWebTypesOptions.map(type => <option key={type} value={type}>{type.toUpperCase()}</option>)}
+          </select>
+
+          <select
+            className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600"
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+          >
+            <option value="all">STATUS</option>
+            <option value="live">🟢 ACTIVE</option>
+            <option value="sus">🔴 SUSPENDED</option>
           </select>
         </div>
 
-        {/* BẢNG DỮ LIỆU LUXURY */}
+        {/* DATA TABLE */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-          <table className="w-full text-left">
+          <table className="w-full text-left table-fixed">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                <th className="p-5">Hệ thống Website</th>
-                <th className="p-5">Trạng thái</th>
-                <th className="p-5 text-center">Ngày sống</th>
-                <th className="p-5">Hạn Proxy</th>
-                <th className="p-5">Chi phí Ads</th>
-                <th className="p-5">Quản trị</th>
+                <th className="p-5 w-[35%]">Website & Platform</th>
+                <th className="p-5 w-[15%]">Assigned Staff</th>
+                <th className="p-5 w-[15%]">Status</th>
+                <th className="p-5 w-[12%]">GMC Date</th>
+                <th className="p-5 w-[13%]">Proxy Expiry Left</th>
+                <th className="p-5 w-[10%]">Ads Cost</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {paginatedData.map((item, idx) => {
-                const liveDays = Math.abs(calculateDaysDiff(item.dateGMC) || 0);
-                const proxyDays = item.proxyExpiry !== "—" ? Number(item.proxyExpiry) : null;
+              {paginatedTableData.map((item: GMCRegItem, idx: number) => {
+                const proxyDaysLeft = item.proxyExpiry !== "—" ? Number(item.proxyExpiry) : null;
+                const isDuplicateDomain = globalDomainFrequencyMap[item.domain.toLowerCase().trim()] > 1;
+                const itemIsSus = isSuspended(item.status);
 
                 return (
-                  <tr key={idx} className="hover:bg-slate-50/50 transition-all group">
-                    <td className="p-5">
-                      <div className="font-bold text-slate-800 text-[14px] lowercase">{item.domain}</div>
+                  <tr
+                    key={idx}
+                    className={`transition-all group ${isDuplicateDomain
+                      ? "bg-amber-50/40 hover:bg-amber-50/70 border-l-4 border-l-amber-500"
+                      : "hover:bg-slate-50/50"
+                      }`}
+                  >
+                    <td className="p-5 overflow-hidden text-ellipsis whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <div className="font-bold text-slate-800 text-[14px] lowercase truncate">{item.domain || "N/A"}</div>
+                        {isDuplicateDomain && (
+                          <span className="text-[8px] font-black bg-amber-500 text-white px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 animate-pulse">
+                            RE-REG / CONFLICT
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">{item.webType || "Unknown"}</div>
+                    </td>
 
-                    </td>
                     <td className="p-5">
-                      <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase ${item.status === "Đã Sus" ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-500"
+                      <span className="text-[10px] font-black text-indigo-600 bg-indigo-50/50 border border-indigo-100 px-3 py-1.5 rounded-lg uppercase tracking-wider truncate inline-block">
+                        {item.dev}
+                      </span>
+                    </td>
+
+                    {/* Cập nhật logic render Text ở đây: itemIsSus ? "Suspended" : "Active" */}
+                    <td className="p-5">
+                      <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase ${itemIsSus ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-500"
                         }`}>
-                        <span className={`w-1 h-1 rounded-full ${item.status === "Đã Sus" ? "bg-red-500" : "bg-emerald-500"}`} />
-                        {item.status}
+                        <span className={`w-1 h-1 rounded-full ${itemIsSus ? "bg-red-500" : "bg-emerald-500"}`} />
+                        {itemIsSus ? "Suspended" : "Active"}
                       </div>
                     </td>
-                    <td className="p-5 text-center">
-                      <div className="text-sm font-black text-slate-700">{liveDays} <span className="text-[9px] text-slate-400">DAYS</span></div>
-                      <div className="w-16 mx-auto bg-slate-100 h-1 rounded-full mt-1.5 overflow-hidden">
-                        <div className="bg-blue-500 h-full" style={{ width: `${Math.min(liveDays, 100)}%` }} />
-                      </div>
-                    </td>
+
                     <td className="p-5">
-                      {proxyDays !== null && !isNaN(proxyDays) ? (
+                      <div className="text-xs font-bold text-slate-600">{item.dateGMC}</div>
+                    </td>
+
+                    <td className="p-5">
+                      {proxyDaysLeft !== null && !isNaN(proxyDaysLeft) ? (
                         <div className="flex flex-col gap-1">
-                          <div className={`text-[11px] font-black ${proxyDays < 3 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
-                            {proxyDays > 0 ? `Còn ${proxyDays} ngày` : 'Đã hết hạn'}
+                          <div className={`text-[11px] font-black ${proxyDaysLeft < 3 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
+                            {proxyDaysLeft > 0 ? `${proxyDaysLeft} days left` : 'Expired'}
                           </div>
-                          {/* Thanh tiến trình nhỏ cho proxy nếu còn dưới 7 ngày */}
-                          {proxyDays > 0 && proxyDays <= 7 && (
-                            <div className="w-12 bg-slate-100 h-1 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${proxyDays < 3 ? 'bg-red-500' : 'bg-orange-400'}`}
-                                style={{ width: `${(proxyDays / 30) * 100}%` }}
-                              />
-                            </div>
-                          )}
                         </div>
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
+
                     <td className="p-5">
                       <div className="text-[15px] font-black text-slate-900">${item.cost || "0"}</div>
-                    </td>
-                    <td className="p-5">
-                      <span className="text-[10px] font-black text-indigo-600 bg-indigo-50/50 border border-indigo-100 px-3 py-1.5 rounded-lg uppercase tracking-wider">
-                        {item.dev}
-                      </span>
                     </td>
                   </tr>
                 );
               })}
+              {paginatedTableData.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center p-10 text-sm font-medium text-slate-400">
+                    No account data found matching the filter.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
 
-          {/* SỬ DỤNG COMPONENT PHÂN TRANG */}
+          {/* PAGINATION BAR */}
           <Pagination
             currentPage={currentPage}
-            totalItems={filteredData.length}
-            itemsPerPage={itemsPerPage}
+            totalItems={finalFilteredTableData.length}
+            itemsPerPage={ITEMS_PER_PAGE}
             onPageChange={(page) => setCurrentPage(page)}
           />
         </div>
+
       </div>
     </div>
   );

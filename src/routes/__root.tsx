@@ -127,7 +127,7 @@ function RootComponent() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Kiểm tra authentication khi component mount hoặc pathname thay đổi
+  // Check authentication when component mounts or pathname changes
   useEffect(() => {
     const checkAuth = () => {
       const authToken = localStorage.getItem("authToken");
@@ -136,7 +136,7 @@ function RootComponent() {
 
       setIsAuthenticated(isLoggedIn);
 
-      // Nếu chưa đăng nhập và không phải trang login, redirect đến login
+      // If not logged in and not on login page, redirect to login
       if (!isLoggedIn && !isLoginPage) {
         router.navigate({ to: "/login" });
       }
@@ -147,19 +147,19 @@ function RootComponent() {
     checkAuth();
   }, [location.pathname, router]);
 
-  // Hiển thị loading trong khi kiểm tra auth
+  // Show loading while checking auth
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-          <p className="mt-2 text-sm text-muted-foreground">Đang tải...</p>
+          <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
   }
 
-  // Nếu ở trang login, không hiển thị sidebar
+  // If on login page, do not show sidebar
   if (location.pathname === "/login") {
     return (
       <QueryClientProvider client={queryClient}>
@@ -168,7 +168,7 @@ function RootComponent() {
     );
   }
 
-  // Layout bình thường với sidebar (chỉ khi authenticated)
+  // Normal layout with sidebar (only when authenticated)
   if (!isAuthenticated) {
     return (
       <QueryClientProvider client={queryClient}>
@@ -178,15 +178,16 @@ function RootComponent() {
   }
 
   const navItems = [
-    { to: "/", label: "Tổng quan", icon: "📊", exact: true },
-    { to: "/domains", label: "Domain", icon: "🌐" },
-    { to: "/customers", label: "Kháng GMC", icon: "👥" },
-    { to: "/devs", label: "Dev / Nhân sự", icon: "🧑‍💻" },
+    { to: "/", label: "Dashboard", icon: "📊", exact: true },
+    { to: "/domains", label: "Domains", icon: "🌐" },
+    { to: "/customers", label: "REG GMC", icon: "👥" },
+    { to: "/devs", label: "Dev GMC", icon: "🧑\u200d💻" },
+    { to: "/profile", label: "Profile", icon: "👤" },
     { to: "/shopify", label: "Shopify", icon: "🛒" },
     { to: "/wordpress", label: "WordPress", icon: "📝" },
-    { to: "/invoices", label: "Hóa đơn", icon: "🧾" },
-    { to: "/reports", label: "Báo cáo", icon: "📈" },
-    { to: "/settings", label: "Cài đặt", icon: "⚙️" },
+    { to: "/invoices", label: "Invoices", icon: "🧾" },
+    { to: "/reports", label: "Reports", icon: "📈" },
+    { to: "/settings", label: "Settings", icon: "⚙️" },
   ];
 
   const handleLogout = () => {
@@ -200,14 +201,14 @@ function RootComponent() {
       {/* Container chính khống chế chiều cao tối đa là 100vh */}
       <div className="flex h-screen w-full bg-background overflow-hidden">
 
-        {/* SIDEBAR: Cố định chiều cao và có thể tự cuộn nếu menu quá dài */}
+        {/* SIDEBAR: Fixed height and can scroll if menu is too long */}
         <aside className="hidden md:flex w-64 shrink-0 flex-col border-r bg-white h-full">
           <div className="px-5 py-5 border-b">
             <div className="text-lg font-black text-slate-900 tracking-tight">WebManager</div>
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Quản lý hệ thống</div>
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">System Management</div>
           </div>
 
-          {/* Menu cuộn độc lập nếu danh sách quá dài */}
+          {/* Menu scrolls independently if list is too long */}
           <nav className="flex-1 p-4 space-y-1 text-sm overflow-y-auto custom-scrollbar">
             {navItems.map((item) => (
               <Link
@@ -222,7 +223,7 @@ function RootComponent() {
             ))}
           </nav>
 
-          {/* User profile luôn dính ở dưới đáy sidebar */}
+          {/* User profile always sticks to bottom of sidebar */}
           <div className="p-4 border-t space-y-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-xs font-bold text-white border-2 border-white shadow-sm">
@@ -237,12 +238,12 @@ function RootComponent() {
               onClick={handleLogout}
               className="w-full px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-all font-medium border border-slate-200 hover:border-slate-300"
             >
-              Đăng Xuất
+              Logout
             </button>
           </div>
         </aside>
 
-        {/* MAIN CONTENT: Phần này sẽ cuộn nếu nội dung bên trong dài */}
+        {/* MAIN CONTENT: This section will scroll if content inside is long */}
         <main className="flex-1 min-w-0 h-full overflow-y-auto scroll-smooth bg-[#FDFCFB]">
           <Outlet />
         </main>

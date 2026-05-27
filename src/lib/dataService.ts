@@ -3,9 +3,11 @@ import Papa from "papaparse";
 const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD;
 const LINK_SHOPIFY = import.meta.env.VITE_LINK_TAB_SHOPIFY;
 const LINK_GMC_VE = import.meta.env.VITE_LINK_TAB_GMC_VE;
+const LINK_GMC_REG = import.meta.env.VITE_LINK_GMC_REG;
 let cachedData: any[] | null = null;
 let cachedAllData: any[] | null = null;
 let cachedGmcVeData: any[] | null = null;
+let cachedGmcRegData: any = null;
 
 export const getAllDataWeb = async (forceRefresh = false) => {
     if (cachedAllData && !forceRefresh) {
@@ -20,8 +22,8 @@ export const getAllDataWeb = async (forceRefresh = false) => {
             cache: "no-store"
         }).then(r => r.text());
 
-        // Parse thủ công — tách dòng rồi tách cột theo TAB
-        // Không dùng PapaParse vì nó nuốt dòng khi gặp dấu " trong Address
+        // Manual parse — split line then split columns by TAB
+        // Don't use PapaParse because it swallows line when encountering " in Address
         const lines = resRebuild.split('\n');
 
         const headerLine = lines[0];
@@ -30,13 +32,13 @@ export const getAllDataWeb = async (forceRefresh = false) => {
         );
 
         const domainIndex = headers.indexOf('Tên Domain');
-        console.log("=== INDEX CỘT DOMAIN ===", domainIndex, "| headers:", headers);
+        console.log("=== DOMAIN COLUMN INDEX ===", domainIndex, "| headers:", headers);
 
         const allDomains: string[] = [];
 
         for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].replace(/\r$/, ''); // bỏ \r của Windows
-            if (line.trim().length === 0) continue;   // bỏ dòng hoàn toàn trống
+            const line = lines[i].replace(/\r$/, ''); // remove \r from Windows
+            if (line.trim().length === 0) continue;   // remove completely empty lines
 
             const cols = line.split('\t');
             const raw = cols[domainIndex];
@@ -52,11 +54,6 @@ export const getAllDataWeb = async (forceRefresh = false) => {
             }
         }
 
-        console.log("=== KẾT QUẢ ===");
-        console.log("Tổng dòng raw (trừ header):", lines.length - 1);
-        console.log("Domain lấy được:", allDomains.length);
-        console.log("Chênh lệch:", (lines.length - 1) - allDomains.length);
-        console.log("Danh sách:", allDomains);
 
         cachedAllData = allDomains;
         return allDomains;
@@ -83,22 +80,22 @@ export const getLatestWebData = async (forceRefresh = false) => {
         const rebuildRows = Papa.parse(resRebuild, { header: true, skipEmptyLines: true }).data;
         const shopifyRows = Papa.parse(resShopify, { header: true, delimiter: "\t", skipEmptyLines: true }).data;
 
-        // --- 1. LỌC REBUILD: Lấy dòng cuối cùng ---
+        // --- 1. FILTER REBUILD: Get last row ---
         const rebuildMap = new Map();
         rebuildRows.forEach((row: any) => {
             const domainName = row["Tên Domain"]?.trim();
             if (domainName) {
-                rebuildMap.set(domainName.toLowerCase(), row); // Thằng sau đè thằng trước -> Lấy thằng cuối
+                rebuildMap.set(domainName.toLowerCase(), row); // Later overwrites earlier -> Get last one
             }
         });
         const latestRebuildData = Array.from(rebuildMap.values());
 
-        // --- 2. LỌC SHOPIFY: Lấy dòng cuối cùng (QUAN TRỌNG) ---
+        // --- 2. FILTER SHOPIFY: Get last row (IMPORTANT) ---
         const shopifyMap = new Map();
         shopifyRows.forEach((row: any) => {
             const domainName = row["Web Shopify"]?.trim();
             if (domainName) {
-                shopifyMap.set(domainName.toLowerCase(), row); // Thằng sau đè thằng trước -> Lấy thằng cuối
+                shopifyMap.set(domainName.toLowerCase(), row); // Later overwrites earlier -> Get last one
             }
         });
 
@@ -106,7 +103,7 @@ export const getLatestWebData = async (forceRefresh = false) => {
         const combined = latestRebuildData.map((r: any) => {
             const domainName = r["Tên Domain"].trim().toLowerCase();
 
-            // Thay vì dùng .find() (lấy thằng đầu), ta lấy trực tiếp từ shopifyMap (đã là thằng cuối)
+            // Instead of using .find() (get first), we get directly from shopifyMap (already last one)
             const s = shopifyMap.get(domainName);
 
             const daysLeft = parseInt(r["DaysLeft"]) || 0;
@@ -146,7 +143,7 @@ export const getGMCVeData = async (forceRefresh = false) => {
 
         const res = await fetch(`${LINK_GMC_VE}${separator}t=${timestamp}`).then(r => r.text());
 
-        // Parse dữ liệu từ tab GMC mới
+        // Parse data from new GMC tab
         const rows = Papa.parse(res, { header: true, skipEmptyLines: true }).data;
 
 
@@ -169,6 +166,47 @@ export const getGMCVeData = async (forceRefresh = false) => {
         return formattedData;
     } catch (error) {
         console.error("GMC VE Fetch error:", error);
+        return [];
+    }
+};
+
+export const getGMCRegData = async (forceRefresh = false) => {
+    if (cachedGmcRegData && !forceRefresh) return cachedGmcRegData;
+
+    try {
+        const timestamp = new Date().getTime();
+        const separator = LINK_GMC_REG.includes('?') ? '&' : '?';
+        const res = await fetch(`${LINK_GMC_REG}${separator}t=${timestamp}`).then(r => r.text());
+        const rows = Papa.parse(res, { header: true, skipEmptyLines: true }).data;
+
+        // 1. CHUẨN HÓA DỮ LIỆU TỪ CSV
+        const formattedData = rows.map((r: any) => ({
+            proxy: (r["Proxy"] || "").trim(),
+            proxyExpiry: r["Hạn Proxy"] || "—",
+            twoFA: r["2FA"] || "—",
+            domain: (r["WEB"] || "").trim(),
+            dateGMC: r["Ngày về GMC"] || "—",
+            webType: r["Loại web"] || "—",
+            status: r["Tình Trạng Sus"] || "Xanh",
+            dev: (r["DEV"] || "").trim(), // Để mặc định là chuỗi rỗng nếu không có tên người reg                
+            adsDate: r["Ngày chạy Ads"] || "—",
+            cost: r["Chi Phí"] || "0",
+            note: r["Note"] || ""
+        }));
+
+        // 2. CRITICAL FILTER: Only get rows with both Domain AND assigned Dev
+        // (Completely remove trash rows like in the image you sent)
+        const validData = formattedData.filter((item: any) => {
+            const hasDomain = item.domain !== "";
+            const hasDev = item.dev !== "" && item.dev.toLowerCase() !== "unknown";
+
+            return hasDomain && hasDev;
+        });
+
+        cachedGmcRegData = validData;
+        return validData;
+    } catch (error) {
+        console.error("GMC REG Fetch error:", error);
         return [];
     }
 };

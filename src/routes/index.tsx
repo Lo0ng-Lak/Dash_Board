@@ -27,11 +27,11 @@ const calculateDaysLeft = (dateStr: string) => {
 };
 
 function Main() {
-  // 1. TỰ ĐỘNG ĐỒNG BỘ: Thay thế hoàn toàn useState và useEffect cũ
+  // 1. AUTO-SYNC: Replace old useState and useEffect completely
   const { data = [], isLoading, isFetching } = useQuery({
     queryKey: ["domainsData"],
     queryFn: () => getLatestWebData(true),
-    refetchInterval: 30000, // 30 giây tự cập nhật một lần
+    refetchInterval: 30000, // 30 seconds auto-update once
     refetchOnWindowFocus: true,
   });
 
@@ -43,7 +43,7 @@ function Main() {
     refetchOnWindowFocus: false,
   });
 
-  // 2. LOGIC TÍNH TOÁN: Tự động chạy lại mỗi khi data từ useQuery thay đổi
+  // 2. CALCULATION LOGIC: Auto-run each time useQuery data changes
   const stats = useMemo(() => {
     const total = data.length;
     const rawTotal = allData.length;
@@ -58,14 +58,14 @@ function Main() {
 
 
     const shopifyExp = data.reduce((acc: any[], d) => {
-      // 1. Phải là Shopify và CHƯA hủy plan
+      // 1. Must be Shopify and NOT canceled plan
       const isShopify = d.type?.toLowerCase().includes('shopify');
       if (!isShopify || d.isCanceled) return acc;
 
-      // 2. Tính số ngày một lần duy nhất
+      // 2. Calculate days once only
       const days = calculateDaysLeft(d.expiryDateShopify);
 
-      // 3. Nếu thỏa mãn điều kiện thời gian thì push vào mảng kết quả
+      // 3. If meets time condition then push to result array
       if (days !== null && days <= 15) {
         acc.push({ ...d, days });
       }
@@ -116,7 +116,7 @@ function Main() {
     <div className="min-h-screen bg-[#F8FAFC] p-6 md:p-12 font-sans text-slate-900 leading-relaxed">
       <div className="max-w-7xl mx-auto space-y-12">
 
-        {/* TIÊU ĐỀ & TRẠNG THÁI ĐỒNG BỘ */}
+        {/* TITLE & SYNC STATUS */}
         <div className="border-b border-slate-200 pb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 uppercase">
@@ -127,14 +127,14 @@ function Main() {
             </p>
           </div>
 
-          {/* Báo hiệu đang làm mới dữ liệu ngầm */}
+          {/* Indicator showing data is being refreshed in background */}
           <div className={`flex items-center gap-2 transition-opacity duration-500 ${isFetching ? 'opacity-100' : 'opacity-0'}`}>
             <div className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
             <span className="text-indigo-600 text-[10px] font-bold uppercase tracking-widest">Live Syncing</span>
           </div>
         </div>
 
-        {/* 1. CÁC CHỈ SỐ TỔNG QUAN */}
+        {/* 1. OVERVIEW STATS */}
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-5">
           <StatCard label="Total Raw Websites" val={stats.rawTotal} sub="All domains" color="text-slate-700" icon="🌐" />
           <StatCard label="Total Filtered Websites" val={stats.total} sub="Cleaned data" color="text-slate-900" icon="📊" />
@@ -144,7 +144,7 @@ function Main() {
           <StatCard label="Inactive" val={stats.canceled} sub="Not active" color="text-rose-500" icon="🛑" />
         </div>
 
-        {/* 2. BIỂU ĐỒ & CẢNH BÁO */}
+        {/* 2. CHARTS & ALERTS */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col items-center">
             <h3 className="text-[10px] font-bold text-slate-400 mb-6 uppercase tracking-widest self-start">Platform Distribution</h3>
@@ -193,7 +193,7 @@ function Main() {
           </div>
         </div>
 
-        {/* 3. FOOTER TRẠNG THÁI */}
+        {/* 3. FOOTER STATUS */}
         <div className="bg-indigo-950 text-white p-8 md:p-10 rounded-[40px] shadow-2xl relative overflow-hidden border border-indigo-900">
           <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/10 blur-[120px] pointer-events-none" />
           <div className="flex flex-col lg:flex-row justify-between items-center gap-10">
@@ -221,7 +221,7 @@ function Main() {
   );
 }
 
-// --- COMPONENTS CON (Giữ nguyên hoặc chỉnh nhẹ style) ---
+// --- CHILD COMPONENTS (Keep as is or minor style tweaks) ---
 
 function StatCard({ label, val, sub, color, icon }: any) {
   return (

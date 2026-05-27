@@ -37,10 +37,10 @@ function LoginPage() {
                 }));
                 navigate({ to: "/" });
             } else {
-                setError("Tài khoản hoặc mật khẩu không chính xác.");
+                setError("Invalid username or password.");
             }
         } catch (err) {
-            setError("Có lỗi xảy ra, vui lòng thử lại.");
+            setError("An error occurred, please try again.");
         } finally {
             setIsLoading(false);
         }
@@ -61,7 +61,7 @@ function LoginPage() {
 
                     <div className="space-y-1">
                         <CardTitle className="text-2xl font-black tracking-tight text-slate-900">
-                            Hệ Thống Quản Trị
+                            Admin System
                         </CardTitle>
                         <CardDescription className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
                             Egead Company Dashboard
@@ -81,7 +81,7 @@ function LoginPage() {
                         <div className="space-y-4">
                             <div className="space-y-2">
                                 <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">
-                                    Tên đăng nhập
+                                    Username
                                 </Label>
                                 <div className="relative">
                                     <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -99,7 +99,7 @@ function LoginPage() {
 
                             <div className="space-y-2">
                                 <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">
-                                    Mật mã bảo mật
+                                    Password
                                 </Label>
                                 <div className="relative">
                                     <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -124,10 +124,10 @@ function LoginPage() {
                             {isLoading ? (
                                 <div className="flex items-center gap-2">
                                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                                    <span>Xác thực danh tính...</span>
+                                    <span>Authenticating...</span>
                                 </div>
                             ) : (
-                                "Đăng Nhập Hệ Thống"
+                                "Login to System"
                             )}
                         </Button>
 

@@ -9,7 +9,7 @@ export const Route = createFileRoute("/domains")({
 
 const ITEMS_PER_PAGE = 10;
 
-// Giữ nguyên các hàm helper của Huy
+
 const RenderRebuildDots = ({ countString }: { countString: string }) => {
   const count = parseInt(countString.replace(/[^0-9]/g, "")) || 0;
   return (
@@ -44,9 +44,9 @@ function Dashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [filterStatus, setFilterStatus] = useState("all");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc"); // Thêm state sắp xếp
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc"); // Add sort order state
 
-  // 1. TÍCH HỢP USEQUERY (Đồng bộ 30s một lần)
+  // 1. INTEGRATE USEQUERY (Sync every 30s)
   const { data: rawData = [], isLoading, isFetching } = useQuery({
     queryKey: ["domainsList"],
     queryFn: () => getLatestWebData(true),
@@ -70,10 +70,10 @@ function Dashboard() {
       return matchesSearch && matchesStatus;
     });
 
-    // BƯỚC 2: Xử lý hiển thị "Ngược" hay "Xuôi"
-    // Mặc định muốn Cũ nhất ở đầu (thứ tự tự nhiên của dataService hiện tại đang bị đảo)
-    // Nếu sortOrder là "asc" (Cũ nhất trước), ta giữ nguyên mảng result
-    // Nếu sortOrder là "desc" (Mới nhất trước), ta mới đảo ngược mảng
+    // STEP 2: Handle display "Newest" or "Oldest"
+    // By default want oldest at top (natural order of dataService currently reversed)
+    // If sortOrder is "asc" (oldest first), keep array as is
+    // If sortOrder is "desc" (newest first), reverse the array
     return sortOrder === "desc" ? [...result].reverse() : result;
   }, [rawData, searchTerm, filterStatus, sortOrder]);
 
@@ -112,7 +112,7 @@ function Dashboard() {
     ));
   };
 
-  if (isLoading) return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">Đang tải dữ liệu hệ thống...</div>;
+  if (isLoading) return <div className="p-10 text-center font-medium text-slate-400 animate-pulse"> Loading Domain Data...</div>;
 
   return (
 
@@ -122,19 +122,19 @@ function Dashboard() {
 
         <div className="flex flex-col md:flex-row justify-between items-end gap-4">
           <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Quản Lý Domain</h1>
-            <p className="text-slate-500 font-medium text-sm">Hệ thống quản lý domain và thông tin liên quan.</p>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">Domain Management</h1>
+            <p className="text-slate-500 font-medium text-sm">Domain management system and related information.</p>
           </div>
 
         </div>
-        {/* THANH TÌM KIẾM & BỘ LỌC */}
+        {/* SEARCH & FILTER BAR */}
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
             <div className="relative w-full md:w-96">
               <span className="absolute left-3 top-2.5 text-slate-400 text-xs">🔍</span>
               <input
                 type="text"
-                placeholder="Tìm kiếm domain, dev hoặc khách hàng..."
+                placeholder="Search domain, dev, or customer..."
                 className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -146,7 +146,7 @@ function Dashboard() {
               onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
               className="..."
             >
-              {sortOrder === "asc" ? "⬇️ Mới nhất trước" : "⬆️ Cũ nhất trước"}
+              {sortOrder === "asc" ? "⬇️ Newest First" : "⬆️ Oldest First"}
             </button>
           </div>
 
@@ -156,35 +156,35 @@ function Dashboard() {
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
             >
-              <option value="all">Tất cả trạng thái</option>
-              <option value="active">🟢 Đang hoạt động</option>
-              <option value="canceled">🔴 Đã hủy</option>
+              <option value="all">All status</option>
+              <option value="active">🟢 Active</option>
+              <option value="canceled">🔴 Canceled</option>
             </select>
 
-            {/* Báo hiệu Sync ngầm */}
+            {/* Background sync indicator */}
             <div className={`transition-opacity duration-500 ${isFetching ? 'opacity-100' : 'opacity-0'}`}>
               <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
             </div>
           </div>
         </div>
 
-        {/* BẢNG DỮ LIỆU */}
+        {/* DATA TABLE */}
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <table className="w-full text-sm text-left border-collapse">
             <thead className="bg-[#F9FAF9] text-slate-400 font-bold uppercase text-[9px] tracking-[0.15em] border-b">
               <tr>
-                <th className="p-5 text-center w-12">STT</th>
+                <th className="p-5 text-center w-12">No.</th>
                 <th className="p-5">Domain</th>
-                <th className="p-5">Nhân sự</th>
-                <th className="p-5">Vận hành</th>
-                <th className="p-5">Hạn Shopify</th>
-                <th className="p-5">Hạn Domain</th>
-                <th className="p-5">Nền tảng</th>
+                <th className="p-5">Staff</th>
+                <th className="p-5">Operations</th>
+                <th className="p-5">Shopify Expiry</th>
+                <th className="p-5">Domain Expiry</th>
+                <th className="p-5">Platform</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {currentItems.map((item, idx) => {
-                // STT tăng dần: (Trang hiện tại - 1) * Số item mỗi trang + index hiện tại + 1
+                // Display index: (current page - 1) * items per page + current index + 1
                 const displayIndex = (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
                 return (
                   <tr key={item.domain + idx} className="hover:bg-slate-50/50 transition-colors">
@@ -198,7 +198,7 @@ function Dashboard() {
 
                     <td className="p-5">
                       <div className="text-slate-700 font-semibold text-xs">Dev: {item.dev}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 italic">Reg: {item.regBy}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 italic">Registered by: {item.regBy}</div>
                     </td>
 
                     <td className="p-5">
@@ -208,9 +208,9 @@ function Dashboard() {
                           {item.webhookStatus === "Đã thay" ? (
                             <span className="text-[8px] bg-purple-50 text-purple-600 border border-purple-100 px-1.5 py-0.5 rounded font-black">WEBHOOK (DONE)</span>
                           ) : item.webhookStatus === "Chưa thay webhook" ? (
-                            <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded font-black">CHƯA THAY WEBHOOK</span>
+                            <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded font-black">NOT WEBHOOK CHANGED</span>
                           ) : (
-                            <span className="text-[8px] bg-slate-50 text-slate-400 border border-slate-100 px-1.5 py-0.5 rounded font-black">CHƯA XÁC ĐỊNH</span>
+                            <span className="text-[8px] bg-slate-50 text-slate-400 border border-slate-100 px-1.5 py-0.5 rounded font-black">NOT DETERMINED</span>
                           )}
                         </div>
                       </div>
@@ -222,10 +222,10 @@ function Dashboard() {
                         {!item.isCanceled && item.expiryDateShopify !== "—" && (() => {
                           const days = calculateDaysLeft(item.expiryDateShopify);
                           return days !== null ? (
-                            <span className={`text-[10px] font-bold uppercase tracking-tight ${days <= 7 ? 'text-red-500' : 'text-blue-500'}`}>Còn {days} ngày</span>
+                            <span className={`text-[10px] font-bold uppercase tracking-tight ${days <= 7 ? 'text-red-500' : 'text-blue-500'}`}>{days} days left</span>
                           ) : null;
                         })()}
-                        <div className="text-[9px] text-slate-400 italic font-medium">Start: {item.startDate || "—"}</div>
+                        <div className="text-[9px] text-slate-400 italic font-medium">Registered: {item.startDate || "—"}</div>
                       </div>
                     </td>
 
@@ -234,13 +234,13 @@ function Dashboard() {
                         {item.expiryDateSheet || "—"}
                       </div>
                       <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded-md w-fit ${item.daysLeft <= 7 ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
-                        Còn {item.daysLeft} ngày
+                        {item.daysLeft} days left
                       </div>
                     </td>
 
                     <td className="p-5">
                       {item.isCanceled && item.isHuyRegMoi ? (
-                        <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-500 rounded-full font-bold border border-red-100 line-through decoration-red-400">× Shopify (đã hủy)</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-500 rounded-full font-bold border border-red-100 line-through decoration-red-400">× Shopify (canceled)</span>
                       ) : (
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${item.type?.toLowerCase() === 'shopify' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
                           {item.type}
@@ -253,10 +253,10 @@ function Dashboard() {
             </tbody>
           </table>
 
-          {/* PHÂN TRANG */}
+          {/* PAGINATION */}
           <div className="p-4 border-t flex items-center justify-between bg-[#F9FAF9]">
             <div className="text-[11px] text-slate-400 font-medium">
-              Hiển thị <span className="text-slate-600 font-bold">{currentItems.length}</span> trên tổng số <span className="text-slate-600 font-bold">{filteredData.length}</span> domain
+              Showing <span className="text-slate-600 font-bold">{currentItems.length}</span> of <span className="text-slate-600 font-bold">{filteredData.length}</span> domains
             </div>
             <div className="flex items-center gap-1">
               <button
