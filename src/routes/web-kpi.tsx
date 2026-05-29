@@ -438,65 +438,72 @@ function WebKPIPage() {
 
                 {/* ── Table ── */}
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-                    <table className="w-full text-left table-fixed">
-                        <thead>
-                            <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                                <th className="p-5 w-[18%]">Dev</th>
-                                <th className="p-5 w-[10%]">Month</th>
-                                <th className="p-5 w-[8%] text-center">Sites</th>
-                                <th className="p-5 w-[14%]">Progress</th>
-                                <th className="p-5 w-[50%]">Domains</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                            {paginated.map((row, idx) => {
-                                const devColor = getDevColor(row.dev, allDevs);
-                                const barPct = Math.round((row.count / maxCount) * 100);
-                                const [y, m] = row.month.split("-");
-                                return (
-                                    <tr key={idx} className="transition-all hover:bg-slate-50/60">
-                                        <td className="p-5">
-                                            <span
-                                                className="text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider inline-block"
-                                                style={{ background: devColor.bg, color: devColor.text, border: `1px solid ${devColor.border}` }}
-                                            >
-                                                {row.dev}
-                                            </span>
-                                        </td>
-                                        <td className="p-5">
-                                            <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-lg uppercase tracking-wider whitespace-nowrap">
-                                                M{parseInt(m)}/{y}
-                                            </span>
-                                        </td>
-                                        <td className="p-5 text-center">
-                                            <span className="text-xl font-black" style={{ color: devColor.bar }}>
-                                                {row.count}
-                                            </span>
-                                        </td>
-                                        <td className="p-5">
-                                            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                                                <div
-                                                    className="h-full rounded-full transition-all duration-500"
-                                                    style={{ width: `${barPct}%`, background: devColor.bar }}
-                                                />
-                                            </div>
-                                        </td>
-                                        <td className="p-5">
-                                            <WebsiteTagList websites={row.websites} color={devColor} />
+
+                    {/* 🟢 BƯỚC 1: Bọc container này để kích hoạt vuốt ngang trên thiết bị di động */}
+                    <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
+
+                        {/* 🟢 BƯỚC 2: Thêm min-w-[1000px] để giữ form hiển thị cột Progress và WebsiteTagList được đẹp mắt */}
+                        <table className="w-full text-left table-fixed min-w-[1000px]">
+                            <thead>
+                                <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                                    <th className="p-5 w-[18%]">Dev</th>
+                                    <th className="p-5 w-[10%]">Month</th>
+                                    <th className="p-5 w-[8%] text-center">Sites</th>
+                                    <th className="p-5 w-[14%]">Progress</th>
+                                    <th className="p-5 w-[50%]">Domains</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {paginated.map((row, idx) => {
+                                    const devColor = getDevColor(row.dev, allDevs);
+                                    const barPct = Math.round((row.count / maxCount) * 100);
+                                    const [y, m] = row.month.split("-");
+                                    return (
+                                        <tr key={idx} className="transition-all hover:bg-slate-50/60">
+                                            <td className="p-5">
+                                                <span
+                                                    className="text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider inline-block"
+                                                    style={{ background: devColor.bg, color: devColor.text, border: `1px solid ${devColor.border}` }}
+                                                >
+                                                    {row.dev}
+                                                </span>
+                                            </td>
+                                            <td className="p-5">
+                                                <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-lg uppercase tracking-wider whitespace-nowrap">
+                                                    M{parseInt(m)}/{y}
+                                                </span>
+                                            </td>
+                                            <td className="p-5 text-center">
+                                                <span className="text-xl font-black" style={{ color: devColor.bar }}>
+                                                    {row.count}
+                                                </span>
+                                            </td>
+                                            <td className="p-5">
+                                                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                                                    <div
+                                                        className="h-full rounded-full transition-all duration-500"
+                                                        style={{ width: `${barPct}%`, background: devColor.bar }}
+                                                    />
+                                                </div>
+                                            </td>
+                                            <td className="p-5">
+                                                <WebsiteTagList websites={row.websites} color={devColor} />
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {paginated.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="text-center p-14 text-sm font-medium text-slate-400">
+                                            No matching records found.
                                         </td>
                                     </tr>
-                                );
-                            })}
-                            {paginated.length === 0 && (
-                                <tr>
-                                    <td colSpan={5} className="text-center p-14 text-sm font-medium text-slate-400">
-                                        No matching records found.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
 
+                    {/* Thanh phân trang nằm ngoài vùng cuộn để luôn cố định vị trí trực quan */}
                     <Pagination
                         currentPage={currentPage}
                         totalItems={tableData.length}

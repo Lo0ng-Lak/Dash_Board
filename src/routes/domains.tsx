@@ -169,91 +169,97 @@ function Dashboard() {
         </div>
 
         {/* DATA TABLE */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <table className="w-full text-sm text-left border-collapse">
-            <thead className="bg-[#F9FAF9] text-slate-400 font-bold uppercase text-[9px] tracking-[0.15em] border-b">
-              <tr>
-                <th className="p-5 text-center w-12">No.</th>
-                <th className="p-5">Domain</th>
-                <th className="p-5">Staff</th>
-                <th className="p-5">Operations</th>
-                <th className="p-5">Shopify Expiry</th>
-                <th className="p-5">Domain Expiry</th>
-                <th className="p-5">Platform</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {currentItems.map((item, idx) => {
-                // Display index: (current page - 1) * items per page + current index + 1
-                const displayIndex = (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
-                return (
-                  <tr key={item.domain + idx} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="p-5 text-center text-slate-400 text-[10px]">
-                      {displayIndex}
-                    </td>
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
 
-                    <td className="p-5">
-                      <div className="font-bold text-slate-800 lowercase text-[15px] mb-1">{item.domain}</div>
-                    </td>
+          {/* 🟢 BƯỚC 1: Bọc container này để kích hoạt vuốt ngang trên điện thoại */}
+          <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
 
-                    <td className="p-5">
-                      <div className="text-slate-700 font-semibold text-xs">Dev: {item.dev}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 italic">Registered by: {item.regBy}</div>
-                    </td>
+            {/* 🟢 BƯỚC 2: Thêm min-w-[1050px] để các cột chứa thông tin dài không bị vỡ hoặc dính chữ */}
+            <table className="w-full text-sm text-left border-collapse min-w-[1050px]">
+              <thead className="bg-[#F9FAF9] text-slate-400 font-bold uppercase text-[9px] tracking-[0.15em] border-b">
+                <tr>
+                  <th className="p-5 text-center w-12">No.</th>
+                  <th className="p-5">Domain</th>
+                  <th className="p-5">Staff</th>
+                  <th className="p-5">Operations</th>
+                  <th className="p-5">Shopify Expiry</th>
+                  <th className="p-5">Domain Expiry</th>
+                  <th className="p-5">Platform</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {currentItems.map((item, idx) => {
+                  // Display index: (current page - 1) * items per page + current index + 1
+                  const displayIndex = (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
+                  return (
+                    <tr key={item.domain + idx} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="p-5 text-center text-slate-400 text-[10px]">
+                        {displayIndex}
+                      </td>
 
-                    <td className="p-5">
-                      <div className="space-y-2">
-                        <RenderRebuildDots countString={item.rebuildCount} />
-                        <div className="flex flex-wrap gap-1">
-                          {item.webhookStatus === "Đã thay" ? (
-                            <span className="text-[8px] bg-purple-50 text-purple-600 border border-purple-100 px-1.5 py-0.5 rounded font-black">WEBHOOK (DONE)</span>
-                          ) : item.webhookStatus === "Chưa thay webhook" ? (
-                            <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded font-black">NOT WEBHOOK CHANGED</span>
-                          ) : (
-                            <span className="text-[8px] bg-slate-50 text-slate-400 border border-slate-100 px-1.5 py-0.5 rounded font-black">NOT DETERMINED</span>
-                          )}
+                      <td className="p-5">
+                        <div className="font-bold text-slate-800 lowercase text-[15px] mb-1">{item.domain}</div>
+                      </td>
+
+                      <td className="p-5">
+                        <div className="text-slate-700 font-semibold text-xs">Dev: {item.dev}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 italic">Registered by: {item.regBy}</div>
+                      </td>
+
+                      <td className="p-5">
+                        <div className="space-y-2">
+                          <RenderRebuildDots countString={item.rebuildCount} />
+                          <div className="flex flex-wrap gap-1">
+                            {item.webhookStatus === "Đã thay" ? (
+                              <span className="text-[8px] bg-purple-50 text-purple-600 border border-purple-100 px-1.5 py-0.5 rounded font-black">WEBHOOK (DONE)</span>
+                            ) : item.webhookStatus === "Chưa thay webhook" ? (
+                              <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded font-black">NOT WEBHOOK CHANGED</span>
+                            ) : (
+                              <span className="text-[8px] bg-slate-50 text-slate-400 border border-slate-100 px-1.5 py-0.5 rounded font-black">NOT DETERMINED</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td className="p-5">
-                      <div className="flex flex-col gap-1">
-                        <div className="font-bold text-slate-700 text-xs tabular-nums">{item.expiryDateShopify || "—"}</div>
-                        {!item.isCanceled && item.expiryDateShopify !== "—" && (() => {
-                          const days = calculateDaysLeft(item.expiryDateShopify);
-                          return days !== null ? (
-                            <span className={`text-[10px] font-bold uppercase tracking-tight ${days <= 7 ? 'text-red-500' : 'text-blue-500'}`}>{days} days left</span>
-                          ) : null;
-                        })()}
-                        <div className="text-[9px] text-slate-400 italic font-medium">Registered: {item.startDate || "—"}</div>
-                      </div>
-                    </td>
+                      <td className="p-5">
+                        <div className="flex flex-col gap-1">
+                          <div className="font-bold text-slate-700 text-xs tabular-nums">{item.expiryDateShopify || "—"}</div>
+                          {!item.isCanceled && item.expiryDateShopify !== "—" && (() => {
+                            const days = calculateDaysLeft(item.expiryDateShopify);
+                            return days !== null ? (
+                              <span className={`text-[10px] font-bold uppercase tracking-tight ${days <= 7 ? 'text-red-500' : 'text-blue-500'}`}>{days} days left</span>
+                            ) : null;
+                          })()}
+                          <div className="text-[9px] text-slate-400 italic font-medium">Registered: {item.startDate || "—"}</div>
+                        </div>
+                      </td>
 
-                    <td className="p-5">
-                      <div className={`font-bold text-xs tabular-nums ${item.daysLeft <= 7 ? 'text-red-500' : 'text-slate-700'}`}>
-                        {item.expiryDateSheet || "—"}
-                      </div>
-                      <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded-md w-fit ${item.daysLeft <= 7 ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
-                        {item.daysLeft} days left
-                      </div>
-                    </td>
+                      <td className="p-5">
+                        <div className={`font-bold text-xs tabular-nums ${item.daysLeft <= 7 ? 'text-red-500' : 'text-slate-700'}`}>
+                          {item.expiryDateSheet || "—"}
+                        </div>
+                        <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded-md w-fit ${item.daysLeft <= 7 ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
+                          {item.daysLeft} days left
+                        </div>
+                      </td>
 
-                    <td className="p-5">
-                      {item.isCanceled && item.isHuyRegMoi ? (
-                        <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-500 rounded-full font-bold border border-red-100 line-through decoration-red-400">× Shopify (canceled)</span>
-                      ) : (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${item.type?.toLowerCase() === 'shopify' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                          {item.type}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <td className="p-5">
+                        {item.isCanceled && item.isHuyRegMoi ? (
+                          <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-500 rounded-full font-bold border border-red-100 line-through decoration-red-400">× Shopify (canceled)</span>
+                        ) : (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${item.type?.toLowerCase() === 'shopify' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                            {item.type}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-          {/* PAGINATION */}
+          {/* PAGINATION: Giữ nguyên nằm ngoài thanh cuộn để cố định dễ bấm */}
           <div className="p-4 border-t flex items-center justify-between bg-[#F9FAF9]">
             <div className="text-[11px] text-slate-400 font-medium">
               Showing <span className="text-slate-600 font-bold">{currentItems.length}</span> of <span className="text-slate-600 font-bold">{filteredData.length}</span> domains

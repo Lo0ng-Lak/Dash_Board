@@ -50,11 +50,41 @@ function GMCPremiumDashboard() {
     return [...rawRegData].reverse();
   }, [rawRegData]);
 
-  // Helper function để check trạng thái thiết bị linh hoạt (Chấp nhận cả dữ liệu Việt/Anh từ API)
+  // Helper function để check trạng thái thiết bị linh hoạt
   const isSuspended = (status: string) => {
     if (!status) return false;
     const s = status.toLowerCase();
     return s === "đã sus" || s === "suspended" || s === "sus";
+  };
+
+  // 🌟 HELPER FUNCTION mới: Chuẩn hóa chuỗi tiền tệ từ "10,5" thành số thực 10.5
+  const parseCost = (costStr: string | undefined): number => {
+    if (!costStr) return 0;
+    // Thay thế dấu phẩy thành dấu chấm để chuẩn hóa số thập phân, loại bỏ khoảng trắng
+    const normalized = costStr.replace(",", ".").trim();
+    const parsed = parseFloat(normalized);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  // Helper function tính số ngày sống (từ ngày dateGMC đến hôm nay)
+  const calculateDaysAlive = (dateStr: string) => {
+    if (!dateStr || dateStr === "—") return null;
+    try {
+      const [day, month, year] = dateStr.split("/").map(Number);
+      const gmcDate = new Date(year, month - 1, day);
+      const today = new Date();
+
+      // Reset giờ về 0 để tính toán ngày chính xác
+      gmcDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+
+      const diffTime = today.getTime() - gmcDate.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      return diffDays >= 0 ? diffDays : 0;
+    } catch (e) {
+      return null;
+    }
   };
 
   // ==========================================
@@ -86,7 +116,8 @@ function GMCPremiumDashboard() {
     const total = dropdownFilteredData.length;
     const live = dropdownFilteredData.filter((item: GMCRegItem) => !isSuspended(item.status)).length;
     const sus = dropdownFilteredData.filter((item: GMCRegItem) => isSuspended(item.status)).length;
-    const totalCost = dropdownFilteredData.reduce((sum: number, item: GMCRegItem) => sum + parseFloat(item.cost || "0"), 0);
+    // 🌟 ĐÃ CẬP NHẬT: Dùng parseCost để cộng tổng tiền chính xác
+    const totalCost = dropdownFilteredData.reduce((sum: number, item: GMCRegItem) => sum + parseCost(item.cost), 0);
     const totalUniqueDomains = new Set(dropdownFilteredData.map((item) => item.domain.toLowerCase().trim())).size;
 
     return { total, live, sus, totalCost, totalUniqueDomains };
@@ -114,19 +145,27 @@ function GMCPremiumDashboard() {
       } else {
         statsMap[devName].live += 1;
       }
-      statsMap[devName].totalCost += parseFloat(item.cost || "0");
+      // 🌟 ĐÃ CẬP NHẬT: Dùng parseCost tại đây
+      statsMap[devName].totalCost += parseCost(item.cost);
     });
     return Object.values(statsMap).sort((a, b) => b.total - a.total);
   }, [dropdownFilteredData]);
 
   // ==========================================
-  // ZONE 3: SEARCH INPUT FILTER (Only applied to table data)
+  // ZONE 3: SEARCH INPUT FILTER & SEARCH STATS
   // ==========================================
   const finalFilteredTableData = useMemo(() => {
     return dropdownFilteredData.filter((item: GMCRegItem) => {
       return item.domain.toLowerCase().includes(searchDomain.toLowerCase());
     });
   }, [dropdownFilteredData, searchDomain]);
+
+  const searchStats = useMemo(() => {
+    // 🌟 ĐÃ CẬP NHẬT: Dùng parseCost cho logic tìm kiếm nhảy số
+    const totalCost = finalFilteredTableData.reduce((sum: number, item: GMCRegItem) => sum + parseCost(item.cost), 0);
+    const totalRows = finalFilteredTableData.length;
+    return { totalCost, totalRows };
+  }, [finalFilteredTableData]);
 
   // Map domain frequency across entire system to label RE-REG
   const globalDomainFrequencyMap = useMemo(() => {
@@ -138,7 +177,7 @@ function GMCPremiumDashboard() {
     return frequency;
   }, [orderedFullData]);
 
-  // Extract month list from source data for filter dropdown
+  // Extract lists for dropdown filters
   const uniqueMonthsOptions = useMemo(() => {
     const monthsSet = new Set<string>();
     rawRegData.forEach((item: GMCRegItem) => {
@@ -154,14 +193,12 @@ function GMCPremiumDashboard() {
     });
   }, [rawRegData]);
 
-  // Extract web type list from source data
   const uniqueWebTypesOptions = useMemo(() => {
     const typesSet = new Set<string>();
     rawRegData.forEach((item: GMCRegItem) => item.webType && item.webType !== "—" && typesSet.add(item.webType));
     return Array.from(typesSet);
   }, [rawRegData]);
 
-  // Extract dev list from source data
   const uniqueDevsOptions = useMemo(() => {
     const devsSet = new Set<string>();
     rawRegData.forEach((item: GMCRegItem) => item.dev && devsSet.add(item.dev));
@@ -177,6 +214,9 @@ function GMCPremiumDashboard() {
   if (isLoading) {
     return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">Loading system data...</div>;
   }
+
+  // Chọn hiển thị số thập phân tối đa là 2 chữ số (ví dụ: 10.5 -> $10.5 hoặc 1,000.55)
+  const formatOptions = { minimumFractionDigits: 0, maximumFractionDigits: 2 };
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-8 text-slate-900">
@@ -195,9 +235,13 @@ function GMCPremiumDashboard() {
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
             <div>
               <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Filtered Rows</p>
-              <h2 className="text-2xl font-black text-slate-900 mt-1">{dynamicStats.total}</h2>
+              <h2 className="text-2xl font-black text-slate-900 mt-1">
+                {searchDomain ? `${searchStats.totalRows} / ` : ""}{dynamicStats.total}
+              </h2>
             </div>
-            <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">All records</p>
+            <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">
+              {searchDomain ? "Matching search result" : "All filtered records"}
+            </p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-indigo-500 border-t-2">
@@ -241,12 +285,17 @@ function GMCPremiumDashboard() {
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-blue-500 border-t-2">
             <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Ads Cost</p>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">
+                {searchDomain ? "Search Ads Cost" : "Total Ads Cost"}
+              </p>
+              {/* 🌟 ĐÃ CẬP NHẬT: Thêm format hiển thị đúng số thập phân cho ô tổng tiền */}
               <h2 className="text-2xl font-black text-blue-600 mt-1">
-                ${dynamicStats.totalCost.toLocaleString('en-US', { minimumFractionDigits: 0 })}
+                ${(searchDomain ? searchStats.totalCost : dynamicStats.totalCost).toLocaleString('en-US', formatOptions)}
               </h2>
             </div>
-            <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-3 bg-blue-50 w-max px-2 py-0.5 rounded-md">USD TOTAL</p>
+            <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-3 bg-blue-50 w-max px-2 py-0.5 rounded-md">
+              {searchDomain ? "SEARCH TOTAL" : "USD TOTAL"}
+            </p>
           </div>
         </div>
 
@@ -339,91 +388,113 @@ function GMCPremiumDashboard() {
           </select>
         </div>
 
-        {/* DATA TABLE */}
+
+        {/* GMC Table */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-          <table className="w-full text-left table-fixed">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                <th className="p-5 w-[35%]">Website & Platform</th>
-                <th className="p-5 w-[15%]">Assigned Staff</th>
-                <th className="p-5 w-[15%]">Status</th>
-                <th className="p-5 w-[12%]">GMC Date</th>
-                <th className="p-5 w-[13%]">Proxy Expiry Left</th>
-                <th className="p-5 w-[10%]">Ads Cost</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {paginatedTableData.map((item: GMCRegItem, idx: number) => {
-                const proxyDaysLeft = item.proxyExpiry !== "—" ? Number(item.proxyExpiry) : null;
-                const isDuplicateDomain = globalDomainFrequencyMap[item.domain.toLowerCase().trim()] > 1;
-                const itemIsSus = isSuspended(item.status);
+          <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
+            <table className="w-full text-left table-fixed min-w-[1100px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  <th className="p-5 w-[30%]">Website & Platform</th>
+                  <th className="p-5 w-[13%]">Assigned Staff</th>
+                  <th className="p-5 w-[13%]">Status</th>
+                  <th className="p-5 w-[12%]">GMC Date</th>
+                  <th className="p-5 w-[12%]">Age (Days)</th>
+                  <th className="p-5 w-[12%]">Proxy Expiry Left</th>
+                  <th className="p-5 w-[10%]">Ads Cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {paginatedTableData.map((item: GMCRegItem, idx: number) => {
+                  const proxyDaysLeft = item.proxyExpiry !== "—" ? Number(item.proxyExpiry) : null;
+                  const isDuplicateDomain = globalDomainFrequencyMap[item.domain.toLowerCase().trim()] > 1;
+                  const itemIsSus = isSuspended(item.status);
+                  const daysAlive = calculateDaysAlive(item.dateGMC);
 
-                return (
-                  <tr
-                    key={idx}
-                    className={`transition-all group ${isDuplicateDomain
-                      ? "bg-amber-50/40 hover:bg-amber-50/70 border-l-4 border-l-amber-500"
-                      : "hover:bg-slate-50/50"
-                      }`}
-                  >
-                    <td className="p-5 overflow-hidden text-ellipsis whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <div className="font-bold text-slate-800 text-[14px] lowercase truncate">{item.domain || "N/A"}</div>
-                        {isDuplicateDomain && (
-                          <span className="text-[8px] font-black bg-amber-500 text-white px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 animate-pulse">
-                            RE-REG / CONFLICT
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">{item.webType || "Unknown"}</div>
-                    </td>
-
-                    <td className="p-5">
-                      <span className="text-[10px] font-black text-indigo-600 bg-indigo-50/50 border border-indigo-100 px-3 py-1.5 rounded-lg uppercase tracking-wider truncate inline-block">
-                        {item.dev}
-                      </span>
-                    </td>
-
-                    {/* Cập nhật logic render Text ở đây: itemIsSus ? "Suspended" : "Active" */}
-                    <td className="p-5">
-                      <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase ${itemIsSus ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-500"
-                        }`}>
-                        <span className={`w-1 h-1 rounded-full ${itemIsSus ? "bg-red-500" : "bg-emerald-500"}`} />
-                        {itemIsSus ? "Suspended" : "Active"}
-                      </div>
-                    </td>
-
-                    <td className="p-5">
-                      <div className="text-xs font-bold text-slate-600">{item.dateGMC}</div>
-                    </td>
-
-                    <td className="p-5">
-                      {proxyDaysLeft !== null && !isNaN(proxyDaysLeft) ? (
-                        <div className="flex flex-col gap-1">
-                          <div className={`text-[11px] font-black ${proxyDaysLeft < 3 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
-                            {proxyDaysLeft > 0 ? `${proxyDaysLeft} days left` : 'Expired'}
-                          </div>
+                  return (
+                    <tr
+                      key={idx}
+                      className={`transition-all group ${isDuplicateDomain
+                        ? "bg-amber-50/40 hover:bg-amber-50/70 border-l-4 border-l-amber-500"
+                        : "hover:bg-slate-50/50"
+                        }`}
+                    >
+                      <td className="p-5 overflow-hidden text-ellipsis whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <div className="font-bold text-slate-800 text-[14px] lowercase truncate">{item.domain || "N/A"}</div>
+                          {isDuplicateDomain && (
+                            <span className="text-[8px] font-black bg-amber-500 text-white px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 animate-pulse">
+                              RE-REG / CONFLICT
+                            </span>
+                          )}
                         </div>
-                      ) : (
-                        <span className="text-slate-300">—</span>
-                      )}
-                    </td>
+                        <div className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">{item.webType || "Unknown"}</div>
+                      </td>
 
-                    <td className="p-5">
-                      <div className="text-[15px] font-black text-slate-900">${item.cost || "0"}</div>
+                      <td className="p-5">
+                        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50/50 border border-indigo-100 px-3 py-1.5 rounded-lg uppercase tracking-wider truncate inline-block">
+                          {item.dev}
+                        </span>
+                      </td>
+
+                      <td className="p-5">
+                        <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase ${itemIsSus ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-500"
+                          }`}>
+                          <span className={`w-1 h-1 rounded-full ${itemIsSus ? "bg-red-500" : "bg-emerald-500"}`} />
+                          {itemIsSus ? "Suspended" : "Active"}
+                        </div>
+                      </td>
+
+                      <td className="p-5">
+                        <div className="text-xs font-bold text-slate-600">{item.dateGMC}</div>
+                      </td>
+
+                      <td className="p-5">
+                        {daysAlive !== null ? (
+                          <div className="flex flex-col">
+                            <span className={`text-xs font-black ${itemIsSus ? "text-slate-400" : "text-emerald-600"}`}>
+                              {daysAlive} {daysAlive === 1 ? "day" : "days"}
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-medium">
+                              {itemIsSus ? "Before suspended" : "Running"}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+
+                      <td className="p-5">
+                        {proxyDaysLeft !== null && !isNaN(proxyDaysLeft) ? (
+                          <div className="flex flex-col gap-1">
+                            <div className={`text-[11px] font-black ${proxyDaysLeft < 3 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
+                              {proxyDaysLeft > 0 ? `${proxyDaysLeft} days left` : 'Expired'}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+
+                      {/* 🌟 ĐÃ CẬP NHẬT: Xử lý chuỗi "10,5" -> parse số chuẩn -> format dấu phẩy chuẩn US */}
+                      <td className="p-5">
+                        <div className="text-[15px] font-black text-slate-900">
+                          ${parseCost(item.cost).toLocaleString('en-US', formatOptions)}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {paginatedTableData.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-center p-10 text-sm font-medium text-slate-400">
+                      No account data found matching the filter.
                     </td>
                   </tr>
-                );
-              })}
-              {paginatedTableData.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-center p-10 text-sm font-medium text-slate-400">
-                    No account data found matching the filter.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           {/* PAGINATION BAR */}
           <Pagination

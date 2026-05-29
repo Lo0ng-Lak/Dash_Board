@@ -259,6 +259,7 @@ export interface ExpenseRecord {
     tenTheAds: string;
     chiPhiUSD: number;     // 0 if VND-only row
     chiPhiVND: number;     // 0 if USD row; parsed from "50k" → 50000, "100k" → 100000
+    chiPhiUSDT: number;    // 0 if non-USDT row; parsed from "10 usdt" → 10
     chiPhiRaw: string;     // original cell value (for display)
     billChiPhi: string;    // URL ảnh
     // derived
@@ -282,46 +283,87 @@ const cleanCell = (val: string | undefined) =>
 
 
 /** Parse USD value: "$1,234.56" or "71,98" → 71.98 */
+/** 3. PARSE USD: Nhận diện số thuần "17,7" hoặc có dấu "$" / chữ "usd" */
 const parseUSD = (val: string): number => {
     if (!val) return 0;
     let normalized = val.trim().toLowerCase();
 
-
+    // CHẶN: Nếu chứa chữ vnd, k, usdt thì đây không phải là tiền USD
     if (
         normalized.includes("vnd") ||
         normalized.includes("₫") ||
         normalized.includes("đ") ||
-        normalized.includes("K") ||
+        normalized.includes("usdt") ||
         normalized.endsWith("k")
     ) {
         return 0;
     }
 
+    // Xóa ký tự $ hoặc chữ usd nếu có gõ kèm
     normalized = normalized.replace(/\$/g, "").replace(/usd/g, "").trim();
 
+    // ĐẶC BIỆT XỬ LÝ CHO HÌNH CỦA BẠN: "71,98" hoặc "29,5" -> đổi thành "71.98" và "29.5" để JS hiểu
     if (normalized.includes(",") && !normalized.includes(".")) {
-        const parts = normalized.split(",");
-        if (parts.length === 2 && parts[1].length <= 2) {
-            normalized = `${parts[0]}.${parts[1]}`;
-        } else {
-            normalized = normalized.replace(/,/g, "");
-        }
-    } else {
-        normalized = normalized.replace(/,/g, "");
+        normalized = normalized.replace(/,/g, ".");
     }
 
-    const numberValue = parseFloat(normalized.replace(/[^0-9.-]/g, ""));
+    const numberValue = parseFloat(normalized);
     return isNaN(numberValue) ? 0 : numberValue;
 };
-
 /** Parse VND value: "50k" → 50000 | "100k" → 100000 | "1.5k" → 1500 | "1.000.000" → 1000000 */
+// const parseVND = (val: string): number => {
+//     if (!val) return 0;
+//     const trimmed = val.trim();
+//     const kMatch = trimmed.match(/^([\d.,]+)vnd$/i);
+//     if (!kMatch) return 0;
+//     const n = parseFloat(kMatch[1].replace(/,/g, "."));
+//     return isNaN(n) ? 0 : n * 1000;
+// };
+
 const parseVND = (val: string): number => {
     if (!val) return 0;
-    const trimmed = val.trim();
-    const kMatch = trimmed.match(/^([\d.,]+)k$/i);
-    if (!kMatch) return 0;
-    const n = parseFloat(kMatch[1].replace(/,/g, "."));
-    return isNaN(n) ? 0 : n * 1000;
+    const trimmed = val.trim().toLowerCase();
+
+    // Loại trừ nghiêm ngặt nếu dòng đó thuộc về USD hoặc USDT
+    if (trimmed.includes("usdt") || trimmed.includes("usd") || trimmed.includes("$")) return 0;
+
+    // Xử lý các dòng đuôi "k" (nếu có: 50k, 1.5k)
+    const kMatch = trimmed.match(/^([\d.,]+)k$/);
+    if (kMatch) {
+        const n = parseFloat(kMatch[1].replace(/,/g, "."));
+        return isNaN(n) ? 0 : n * 1000;
+    }
+
+    // Xử lý đúng các dòng trong hình: "50 VND", "100 VND"
+    const vndMatch = trimmed.match(/^([\d.,]+)\s*(vnd|₫|đ)$/);
+    if (vndMatch) {
+        // Đổi dấu phẩy thành dấu chấm đề phòng bạn gõ "1,5 VND" -> 1.5
+        const n = parseFloat(vndMatch[1].replace(/,/g, "."));
+        // Nhân với 1000 theo ý bạn: 50 VND -> 50.000₫
+        return isNaN(n) ? 0 : n * 1000;
+    }
+
+    return 0;
+};
+
+/** 2. PARSE USDT (Mới): Nhận diện chữ "usdt" */
+const parseUSDT = (val: string): number => {
+    if (!val) return 0;
+    const trimmed = val.trim().toLowerCase();
+
+    // Tìm xem chuỗi có kết thúc bằng chữ "usdt" không
+    const usdtMatch = trimmed.match(/^([\d.,]+)\s*usdt$/);
+    if (usdtMatch) {
+        let numStr = usdtMatch[1];
+        // Đổi dấu phẩy thành dấu chấm nếu gõ số thập phân (Ví dụ: 10,5 USDT)
+        if (numStr.includes(",") && !numStr.includes(".")) {
+            numStr = numStr.replace(/,/g, ".");
+        }
+        const n = parseFloat(numStr);
+        return isNaN(n) ? 0 : n;
+    }
+
+    return 0;
 };
 
 const parseNum = (val: string): number => {
@@ -466,8 +508,10 @@ export const getDomainSheetData = async (forceRefresh = false): Promise<DomainSh
                     ngayThanhToan: ngayTT,
                     tenWeb: c(iTenWeb),
                     tenTheAds: c(iTenThe),
+                    // 3 hàm parse độc lập xử lý tách biệt từng loại tiền tệ
                     chiPhiUSD: parseUSD(rawAmount),
                     chiPhiVND: parseVND(rawAmount),
+                    chiPhiUSDT: parseUSDT(rawAmount),
                     chiPhiRaw: rawAmount,
                     billChiPhi: c(iBill),
                     month: parseMonth(ngayTT),
