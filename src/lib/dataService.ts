@@ -4,12 +4,25 @@ const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD;
 const LINK_SHOPIFY = import.meta.env.VITE_LINK_TAB_SHOPIFY;
 const LINK_GMC_VE = import.meta.env.VITE_LINK_TAB_GMC_VE;
 const LINK_GMC_REG = import.meta.env.VITE_LINK_GMC_REG;
+const LINK_INVOICES_GMC = import.meta.env.VITE_LINK_INVOICES_GMC ?? "";
+
+let cachedDataNew: DomainSheetData | null = null;
 let cachedData: any[] | null = null;
 let cachedAllData: any[] | null = null;
 let cachedGmcVeData: any[] | null = null;
 let cachedGmcRegData: any = null;
 
-export const getAllDataWeb = async (forceRefresh = false) => {
+
+export interface WebRecord {
+    domain: string;
+    dev: string;
+    completedDate: string | null; // "YYYY-MM-DD" | null
+    month: string | null;         // "YYYY-MM" | null
+    status: string;
+}
+
+
+export const getAllDataWeb = async (forceRefresh = false): Promise<WebRecord[]> => {
     if (cachedAllData && !forceRefresh) {
         return cachedAllData;
     }
@@ -26,37 +39,49 @@ export const getAllDataWeb = async (forceRefresh = false) => {
         // Don't use PapaParse because it swallows line when encountering " in Address
         const lines = resRebuild.split('\n');
 
-        const headerLine = lines[0];
-        const headers = headerLine.split('\t').map(h =>
+        const headers = lines[0].split('\t').map(h =>
             h.replace(/[\u00A0\uFEFF\u200B\r]/g, '').trim()
         );
 
         const domainIndex = headers.indexOf('Tên Domain');
-        console.log("=== DOMAIN COLUMN INDEX ===", domainIndex, "| headers:", headers);
+        const devIndex = headers.indexOf('Tên Dev');
+        const statusIndex = headers.indexOf('Đã hoàn thành');
+        const dateIndex = headers.indexOf('Ngày hoàn thành');
 
-        const allDomains: string[] = [];
+        console.log("=== COLUMN INDEXES ===", { domainIndex, devIndex, statusIndex, dateIndex });
+
+        const clean = (val: string | undefined) =>
+            (val ?? '').normalize('NFC').replace(/[\u00A0\uFEFF\u200B"'\r]/g, '').trim();
+
+        const parseDate = (raw: string): string | null => {
+            const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+            return null;
+        };
+
+        const records: WebRecord[] = [];
 
         for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].replace(/\r$/, ''); // remove \r from Windows
-            if (line.trim().length === 0) continue;   // remove completely empty lines
+            const line = lines[i].replace(/\r$/, '');
+            if (line.trim().length === 0) continue;
 
             const cols = line.split('\t');
-            const raw = cols[domainIndex];
-            if (!raw) continue;
 
-            const domain = raw
-                .normalize('NFC')
-                .replace(/[\u00A0\uFEFF\u200B"']/g, '')
-                .trim();
+            const domain = clean(cols[domainIndex]);
+            if (!domain) continue;
 
-            if (domain.length > 0) {
-                allDomains.push(domain);
-            }
+            const dev = clean(cols[devIndex]);
+            const status = clean(cols[statusIndex]);
+            const completedDate = parseDate(clean(cols[dateIndex]));
+            const month = completedDate ? completedDate.slice(0, 7) : null;
+
+            records.push({ domain, dev, completedDate, month, status });
         }
 
+        cachedAllData = records;
+        return records;
 
-        cachedAllData = allDomains;
-        return allDomains;
     } catch (error) {
         console.error("Fetch error:", error);
         return [];
@@ -208,5 +233,253 @@ export const getGMCRegData = async (forceRefresh = false) => {
     } catch (error) {
         console.error("GMC REG Fetch error:", error);
         return [];
+    }
+};
+
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface DomainRecord {
+    stt: number;
+    tenReg: string;
+    domain: string;
+    ngayMua: string;        // raw "DD/MM/YYYY"
+    expiryRaw: string;      // raw "Feb 28, 2027"
+    expiryDate: Date | null;
+    daysLeft: number | null; // computed: expiryDate - today
+    gia: number;
+    trangThai: string;      // "Active" | ...
+}
+
+export interface ExpenseRecord {
+    tenReg: string;
+    loaiChiPhi: string;    // "Mua domain" | "Chi phí ADS" | "Đăng ký GMC" | "Mua mail"
+    ngayThanhToan: string; // raw "DD/MM/YYYY"
+    tenWeb: string;
+    tenTheAds: string;
+    chiPhiUSD: number;     // 0 if VND-only row
+    chiPhiVND: number;     // 0 if USD row; parsed from "50k" → 50000, "100k" → 100000
+    chiPhiRaw: string;     // original cell value (for display)
+    billChiPhi: string;    // URL ảnh
+    // derived
+    month: string | null;  // "YYYY-MM"
+}
+
+export interface DomainSheetData {
+    domains: DomainRecord[];
+    expenses: ExpenseRecord[];
+}
+
+// ─── Cache ────────────────────────────────────────────────────────────────────
+
+
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const cleanCell = (val: string | undefined) =>
+    (val ?? "").normalize("NFC").replace(/[\u00A0\uFEFF\u200B"'\r]/g, "").trim();
+
+
+
+/** Parse USD value: "$1,234.56" or "71,98" → 71.98 */
+const parseUSD = (val: string): number => {
+    if (!val) return 0;
+    let normalized = val.trim().toLowerCase();
+
+
+    if (
+        normalized.includes("vnd") ||
+        normalized.includes("₫") ||
+        normalized.includes("đ") ||
+        normalized.includes("K") ||
+        normalized.endsWith("k")
+    ) {
+        return 0;
+    }
+
+    normalized = normalized.replace(/\$/g, "").replace(/usd/g, "").trim();
+
+    if (normalized.includes(",") && !normalized.includes(".")) {
+        const parts = normalized.split(",");
+        if (parts.length === 2 && parts[1].length <= 2) {
+            normalized = `${parts[0]}.${parts[1]}`;
+        } else {
+            normalized = normalized.replace(/,/g, "");
+        }
+    } else {
+        normalized = normalized.replace(/,/g, "");
+    }
+
+    const numberValue = parseFloat(normalized.replace(/[^0-9.-]/g, ""));
+    return isNaN(numberValue) ? 0 : numberValue;
+};
+
+/** Parse VND value: "50k" → 50000 | "100k" → 100000 | "1.5k" → 1500 | "1.000.000" → 1000000 */
+const parseVND = (val: string): number => {
+    if (!val) return 0;
+    const trimmed = val.trim();
+    const kMatch = trimmed.match(/^([\d.,]+)k$/i);
+    if (!kMatch) return 0;
+    const n = parseFloat(kMatch[1].replace(/,/g, "."));
+    return isNaN(n) ? 0 : n * 1000;
+};
+
+const parseNum = (val: string): number => {
+    if (!val) return 0;
+
+    let normalized = val.trim().replace(/\s+/g, "");
+
+    // Nếu chuỗi có dấu phẩy đóng vai trò là dấu cách thập phân (Ví dụ: 1,18)
+    // Chúng ta đổi nó thành dấu chấm để định dạng chuẩn JS hiểu được
+    if (normalized.includes(",") && !normalized.includes(".")) {
+        normalized = normalized.replace(/,/g, ".");
+    } else {
+        // Trường hợp định dạng kiểu Mỹ (1,000.18) thì xóa dấu phẩy phân tách hàng nghìn đi
+        normalized = normalized.replace(/,/g, "");
+    }
+
+    const n = parseFloat(normalized);
+    return isNaN(n) ? 0 : n;
+};
+
+/**
+ * Parse expiry date from Google Sheets format "Feb 28, 2027"
+ * Also handles "DD/MM/YYYY" just in case
+ */
+const parseExpiryDate = (raw: string): Date | null => {
+    if (!raw) return null;
+
+    // "Feb 28, 2027" — standard JS Date parse works for this format
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return d;
+
+    // Fallback: "DD/MM/YYYY"
+    const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmy) return new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
+
+    return null;
+};
+
+const calcDaysLeft = (expiry: Date | null): number | null => {
+    if (!expiry) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diff = expiry.getTime() - today.getTime();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+};
+
+const parseMonth = (raw: string): string | null => {
+    const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}`;
+    if (/^\d{4}-\d{2}/.test(raw)) return raw.slice(0, 7);
+    return null;
+};
+
+// ─── Main fetch ───────────────────────────────────────────────────────────────
+
+export const getDomainSheetData = async (forceRefresh = false): Promise<DomainSheetData> => {
+    if (cachedDataNew && !forceRefresh) return cachedDataNew;
+
+    try {
+        const ts = new Date().getTime();
+        const sep = LINK_INVOICES_GMC.includes("?") ? "&" : "?";
+        const text = await fetch(`${LINK_INVOICES_GMC}${sep}t=${ts}`, { cache: "no-store" })
+            .then(r => r.text());
+
+        const lines = text.split("\n");
+
+        // Row 0 = header
+        const headers = lines[0].split("\t").map(h => cleanCell(h));
+        const normalizedHeaders = headers.map(h => h.toLowerCase().replace(/\s+/g, " ").trim());
+        const findHeader = (keys: string[]) => {
+            for (const key of keys) {
+                const idx = normalizedHeaders.indexOf(key.toLowerCase().trim());
+                if (idx >= 0) return idx;
+            }
+            return headers.findIndex((h) => keys.some((key) => new RegExp(key, "i").test(h)));
+        };
+
+        // Left-side column indexes
+        const iSTT = findHeader(["stt"]);
+        const iTenReg = findHeader(["tên reg", "registrant", "registrant name"]);
+        const iDomain = findHeader(["domain"]);
+        const iNgayMua = findHeader(["ngày mua", "purchase date", "date mua"]);
+        const iDaysLeft = findHeader(["daysleft", "hạn domain", "expiry", "expiry date"]);
+        const iGia = findHeader(["giá", "gia", "amount", "cost", "số tiền"]);
+        const iTrangThai = findHeader(["trạng thái (tool chạy)", "trạng thái", "status"]);
+
+        // Right-side column indexes
+        const iTenRegRRaw = headers.map(h => h.toLowerCase().trim()).lastIndexOf("tên reg");
+        const iTenRegR = iTenRegRRaw >= 0 ? iTenRegRRaw : iTenReg;
+        const iLoai = findHeader(["tên chi phí", "chi phí", "type", "expense type"]);
+        const iNgayTT = findHeader(["ngày thanh toán", "payment date", "ngày thanh toán"]);
+        const iTenWeb = findHeader(["tên web", "web", "website", "url"]);
+        const iTenThe = findHeader(["tên thẻ ads", "thẻ ads", "ads card"]);
+        const iChiPhi = findHeader(["chi phí (usd)", "chi phí usd", "chi phi (usd)", "chi phí", "amount", "số tiền", "total"]);
+        const iBill = findHeader(["bill chi phí", "bill", "hóa đơn", "invoice"]);
+
+        console.log("Domain sheet indexes:", {
+            iSTT, iTenReg, iDomain, iNgayMua, iDaysLeft, iGia, iTrangThai,
+            iTenRegR, iLoai, iNgayTT, iTenWeb, iTenThe, iChiPhi, iBill,
+        });
+
+        const domains: DomainRecord[] = [];
+        const expenses: ExpenseRecord[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].replace(/\r$/, "");
+            if (line.trim().length === 0) continue;
+
+            const cols = line.split("\t");
+            const c = (idx: number) => cleanCell(cols[idx]);
+
+            // ── Left side: domain record ──
+            const domainVal = c(iDomain);
+            if (domainVal) {
+                const expiryRaw = c(iDaysLeft); // column header says "DaysLeft" but contains expiry date
+                const expiryDate = parseExpiryDate(expiryRaw);
+                domains.push({
+                    stt: parseInt(c(iSTT)) || i,
+                    tenReg: c(iTenReg),
+                    domain: domainVal,
+                    ngayMua: c(iNgayMua),
+                    expiryRaw,
+                    expiryDate,
+                    daysLeft: calcDaysLeft(expiryDate),
+                    gia: parseNum(c(iGia)),
+                    trangThai: c(iTrangThai),
+                });
+            }
+
+            // ── Right side: expense record ──
+            const loaiChiPhi = c(iLoai);
+            const registrant = c(iTenRegR);
+            const rawAmount = c(iChiPhi);
+            const hasRegistrant = registrant !== "" && registrant !== "—";
+            const hasAmount = rawAmount !== "" && rawAmount !== "—";
+
+            if (loaiChiPhi && hasRegistrant && hasAmount) {
+                const ngayTT = c(iNgayTT);
+                expenses.push({
+                    tenReg: registrant,
+                    loaiChiPhi,
+                    ngayThanhToan: ngayTT,
+                    tenWeb: c(iTenWeb),
+                    tenTheAds: c(iTenThe),
+                    chiPhiUSD: parseUSD(rawAmount),
+                    chiPhiVND: parseVND(rawAmount),
+                    chiPhiRaw: rawAmount,
+                    billChiPhi: c(iBill),
+                    month: parseMonth(ngayTT),
+                });
+            }
+        }
+
+        cachedDataNew = { domains, expenses };
+        return cachedDataNew;
+
+    } catch (err) {
+        console.error("getDomainSheetData error:", err);
+        return { domains: [], expenses: [] };
     }
 };
