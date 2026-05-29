@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WordpressRouteImport } from './routes/wordpress'
+import { Route as WebKpiRouteImport } from './routes/web-kpi'
 import { Route as ShopifyRouteImport } from './routes/shopify'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
@@ -24,6 +25,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const WordpressRoute = WordpressRouteImport.update({
   id: '/wordpress',
   path: '/wordpress',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebKpiRoute = WebKpiRouteImport.update({
+  id: '/web-kpi',
+  path: '/web-kpi',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShopifyRoute = ShopifyRouteImport.update({
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
+  '/web-kpi': typeof WebKpiRoute
   '/wordpress': typeof WordpressRoute
 }
 export interface FileRoutesByTo {
@@ -101,6 +108,7 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
+  '/web-kpi': typeof WebKpiRoute
   '/wordpress': typeof WordpressRoute
 }
 export interface FileRoutesById {
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
+  '/web-kpi': typeof WebKpiRoute
   '/wordpress': typeof WordpressRoute
 }
 export interface FileRouteTypes {
@@ -130,6 +139,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/shopify'
+    | '/web-kpi'
     | '/wordpress'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/shopify'
+    | '/web-kpi'
     | '/wordpress'
   id:
     | '__root__'
@@ -156,6 +167,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/shopify'
+    | '/web-kpi'
     | '/wordpress'
   fileRoutesById: FileRoutesById
 }
@@ -170,6 +182,7 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   ShopifyRoute: typeof ShopifyRoute
+  WebKpiRoute: typeof WebKpiRoute
   WordpressRoute: typeof WordpressRoute
 }
 
@@ -180,6 +193,13 @@ declare module '@tanstack/react-router' {
       path: '/wordpress'
       fullPath: '/wordpress'
       preLoaderRoute: typeof WordpressRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/web-kpi': {
+      id: '/web-kpi'
+      path: '/web-kpi'
+      fullPath: '/web-kpi'
+      preLoaderRoute: typeof WebKpiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/shopify': {
@@ -266,6 +286,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   ShopifyRoute: ShopifyRoute,
+  WebKpiRoute: WebKpiRoute,
   WordpressRoute: WordpressRoute,
 }
 export const routeTree = rootRouteImport
