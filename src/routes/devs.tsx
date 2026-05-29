@@ -51,14 +51,25 @@ function DevDashboard() {
     return s === "đã sus" || s === "suspended" || s === "sus";
   };
 
-  // Tính khoảng cách ngày chuẩn xác (Lấy ngày hiện tại trừ ngày trong quá khứ để ra số dương)
-  const calculateDaysElapsed = (targetDateStr: string) => {
-    if (!targetDateStr || targetDateStr === "—") return null;
-    const [day, month, year] = targetDateStr.split("/").map(Number);
-    const targetDate = new Date(year, month - 1, day);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Math.floor((today.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
+  // 🌟 ĐÃ CẬP NHẬT: Hàm tính số ngày sống chuẩn chỉnh giống hệt file trước
+  const calculateDaysAlive = (dateStr: string) => {
+    if (!dateStr || dateStr === "—") return null;
+    try {
+      const [day, month, year] = dateStr.split("/").map(Number);
+      const gmcDate = new Date(year, month - 1, day);
+      const today = new Date();
+
+      // Reset giờ về 0 để tính toán ngày chính xác từng mốc
+      gmcDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+
+      const diffTime = today.getTime() - gmcDate.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      return diffDays >= 0 ? diffDays : 0;
+    } catch (e) {
+      return null;
+    }
   };
 
   // ==========================================
@@ -70,7 +81,6 @@ function DevDashboard() {
     const totalLive = rawGmcData.filter(item => !isSuspended(item.status)).length;
     const totalSus = rawGmcData.filter(item => isSuspended(item.status)).length;
 
-    // 🟢 SỬA TẠI ĐÂY: Chuyển đổi dấu phẩy thành dấu chấm trước khi lọc số lẻ
     const totalCost = rawGmcData.reduce((sum, item) => {
       const costStr = (item.cost || "0").replace(/,/g, "."); // Biến "1,18" thành "1.18"
       const costNum = parseFloat(costStr.replace(/[^0-9.]/g, ""));
@@ -106,7 +116,6 @@ function DevDashboard() {
     const sus = dropdownFilteredData.filter((item: GMCAccountItem) => isSuspended(item.status)).length;
     const totalUniqueDomains = new Set(dropdownFilteredData.map(item => item.domain.trim().toLowerCase())).size;
 
-    // 🟢 SỬA TẠI ĐÂY: Đồng bộ cách tính tổng cho dữ liệu sau khi lọc dropdown
     const totalCost = dropdownFilteredData.reduce((sum, item) => {
       const costStr = (item.cost || "0").replace(/,/g, "."); // Biến "1,18" thành "1.18"
       const costNum = parseFloat(costStr.replace(/[^0-9.]/g, ""));
@@ -251,7 +260,6 @@ function DevDashboard() {
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-blue-500 border-t-2">
             <div>
               <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Ads Cost</p>
-              {/* 🟢 SỬA TẠI ĐÂY: Thêm maximumFractionDigits để không bị lỗi hiển thị số thực dấu phẩy động làm tròn sai */}
               <h2 className="text-2xl font-black text-blue-600 mt-1">
                 ${dynamicStats.totalCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
               </h2>
@@ -355,7 +363,8 @@ function DevDashboard() {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {paginatedTableData.map((item: GMCAccountItem, idx: number) => {
-                  const liveDaysCount = calculateDaysElapsed(item.dateGMC) ?? 0;
+                  // 🌟 ĐÃ CẬP NHẬT: Thay đổi hàm tính toán đồng nhất
+                  const daysAlive = calculateDaysAlive(item.dateGMC);
                   const proxyDaysLeft = item.proxyExpiry !== "—" ? Number(item.proxyExpiry) : null;
                   const isDuplicateDomain = item.domain ? globalDomainFrequencyMap[item.domain.toLowerCase().trim()] > 1 : false;
                   const itemIsSus = isSuspended(item.status);
@@ -393,10 +402,20 @@ function DevDashboard() {
                         </div>
                       </td>
 
+                      {/* 🌟 ĐÃ CẬP NHẬT: Layout và cấu trúc hiển thị cột Days Alive chuẩn xác */}
                       <td className="p-5">
-                        <div className="text-sm font-black text-slate-700">
-                          {liveDaysCount} <span className="text-[9px] text-slate-400">DAYS</span>
-                        </div>
+                        {daysAlive !== null ? (
+                          <div className="flex flex-col">
+                            <span className={`text-xs font-black ${itemIsSus ? "text-slate-400" : "text-emerald-600"}`}>
+                              {daysAlive} {daysAlive === 1 ? "day" : "days"}
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-medium">
+                              {itemIsSus ? "Before suspended" : "Running"}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
 
                       <td className="p-5">
