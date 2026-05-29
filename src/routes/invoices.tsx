@@ -215,10 +215,13 @@ function DomainManagerPage() {
   const expStats = useMemo(() => {
     const totalUSD = expZoneA.reduce((s, e) => s + e.chiPhiUSD, 0);
     const totalVND = expZoneA.reduce((s, e) => s + e.chiPhiVND, 0);
+    const totalUSDT = expZoneA.reduce((s, e) => s + (e.chiPhiUSDT || 0), 0);
     const total = totalUSD; // keep for compat
     const byType: Record<string, number> = {};
-    expZoneA.forEach(e => { byType[e.loaiChiPhi] = (byType[e.loaiChiPhi] || 0) + e.chiPhiUSD; });
-    return { total, totalUSD, totalVND, byType, count: expZoneA.length };
+    expZoneA.forEach(e => {
+      byType[e.loaiChiPhi] = (byType[e.loaiChiPhi] || 0) + (e.chiPhiUSD || 0) + (e.chiPhiUSDT || 0);
+    });
+    return { total, totalUSD, totalVND, totalUSDT, byType, count: expZoneA.length };
   }, [expZoneA]);
 
   const expPieData = useMemo(() =>
@@ -377,82 +380,96 @@ function DomainManagerPage() {
               )}
             </div>
 
+
             {/* Domain Table */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-              <table className="w-full text-left table-fixed">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    <th className="p-4 w-[5%]">#</th>
-                    <th className="p-4 w-[12%]">Registrant</th>
-                    <th className="p-4 w-[25%]">Domain</th>
-                    <th className="p-4 w-[12%]">Purchase Date</th>
-                    <th className="p-4 w-[13%]">Expiry Date</th>
-                    <th className="p-4 w-[9%] text-center">Days Left</th>
-                    <th className="p-4 w-[9%] text-right">Price</th>
-                    <th className="p-4 w-[10%]">Tool Status</th>
-                    <th className="p-4 w-[5%] text-center">⚠</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {domPaginated.map((d, i) => {
-                    const isExpiring = d.daysLeft !== null && d.daysLeft <= 30;
-                    const isWarning = d.daysLeft !== null && d.daysLeft > 30 && d.daysLeft <= 90;
-                    return (
-                      <tr key={i} className={`transition-all hover:bg-slate-50/60 ${getDaysLeftBg(d.daysLeft)}`}>
-                        <td className="p-4 text-[11px] text-slate-400 font-bold">{d.stt}</td>
-                        <td className="p-4">
-                          <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg uppercase tracking-wider">
-                            {d.tenReg || "—"}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <a href={`https://${d.domain}`} target="_blank" rel="noreferrer"
-                            className="font-bold text-slate-800 text-sm lowercase hover:text-indigo-600 transition-colors truncate block">
-                            {d.domain}
-                          </a>
-                        </td>
-                        <td className="p-4 text-[11px] text-slate-500 font-bold">{d.ngayMua || "—"}</td>
-                        <td className="p-4">
-                          <span className={`text-[11px] font-bold ${getDaysLeftColor(d.daysLeft)}`}>
-                            {d.expiryRaw || "—"}
-                          </span>
-                        </td>
-                        <td className="p-4 text-center">
-                          <span className={`text-sm font-black ${getDaysLeftColor(d.daysLeft)}`}>
-                            {d.daysLeft !== null ? d.daysLeft : "—"}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right">
-                          <span className="text-sm font-black text-slate-700">
-                            {d.gia > 0 ? fmtUSD(d.gia) : "—"}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${d.trangThai?.toLowerCase() === "active"
-                            ? "bg-emerald-50 text-emerald-600"
-                            : "bg-slate-100 text-slate-500"
-                            }`}>
-                            <span className={`w-1 h-1 rounded-full ${d.trangThai?.toLowerCase() === "active" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-                            {d.trangThai || "—"}
-                          </div>
-                        </td>
-                        <td className="p-4 text-center">
-                          {isExpiring ? (
-                            <span className="text-[9px] font-black bg-red-500 text-white px-2 py-0.5 rounded-full uppercase animate-pulse">URGENT</span>
-                          ) : isWarning ? (
-                            <span className="text-[9px] font-black bg-amber-400 text-white px-2 py-0.5 rounded-full uppercase">SOON</span>
-                          ) : (
-                            <span className="text-[9px] font-black bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full uppercase">OK</span>
-                          )}
+              {/* 🟢 BƯỚC 1: Bọc container này để kích hoạt vuốt ngang trên điện thoại */}
+              <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
+
+                {/* 🟢 BƯỚC 2: Thêm min-w-[1000px] để bảng luôn giữ form đẹp khi thu nhỏ màn hình */}
+                <table className="w-full text-left table-fixed min-w-[1000px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <th className="p-4 w-[5%]">#</th>
+                      <th className="p-4 w-[12%]">Registrant</th>
+                      <th className="p-4 w-[25%]">Domain</th>
+                      <th className="p-4 w-[12%]">Purchase Date</th>
+                      <th className="p-4 w-[13%]">Expiry Date</th>
+                      <th className="p-4 w-[9%] text-center">Days Left</th>
+                      <th className="p-4 w-[9%] text-right">Price</th>
+                      <th className="p-4 w-[10%]">Tool Status</th>
+                      <th className="p-4 w-[5%] text-center">⚠</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {domPaginated.map((d, i) => {
+                      const isExpiring = d.daysLeft !== null && d.daysLeft <= 30;
+                      const isWarning = d.daysLeft !== null && d.daysLeft > 30 && d.daysLeft <= 90;
+                      return (
+                        <tr key={i} className={`transition-all hover:bg-slate-50/60 ${getDaysLeftBg(d.daysLeft)}`}>
+                          <td className="p-4 text-[11px] text-slate-400 font-bold">{d.stt}</td>
+                          <td className="p-4">
+                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg uppercase tracking-wider">
+                              {d.tenReg || "—"}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <a href={`https://${d.domain}`} target="_blank" rel="noreferrer"
+                              className="font-bold text-slate-800 text-sm lowercase hover:text-indigo-600 transition-colors truncate block">
+                              {d.domain}
+                            </a>
+                          </td>
+                          <td className="p-4 text-[11px] text-slate-500 font-bold">{d.ngayMua || "—"}</td>
+                          <td className="p-4">
+                            <span className={`text-[11px] font-bold ${getDaysLeftColor(d.daysLeft)}`}>
+                              {d.expiryRaw || "—"}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                            <span className={`text-sm font-black ${getDaysLeftColor(d.daysLeft)}`}>
+                              {d.daysLeft !== null ? d.daysLeft : "—"}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right">
+                            <span className="text-sm font-black text-slate-700">
+                              {d.gia > 0 ? fmtUSD(d.gia) : "—"}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${d.trangThai?.toLowerCase() === "active"
+                              ? "bg-emerald-50 text-emerald-600"
+                              : "bg-slate-100 text-slate-500"
+                              }`}>
+                              <span className={`w-1 h-1 rounded-full ${d.trangThai?.toLowerCase() === "active" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                              {d.trangThai || "—"}
+                            </div>
+                          </td>
+                          <td className="p-4 text-center">
+                            {isExpiring ? (
+                              <span className="text-[9px] font-black bg-red-500 text-white px-2 py-0.5 rounded-full uppercase animate-pulse">URGENT</span>
+                            ) : isWarning ? (
+                              <span className="text-[9px] font-black bg-amber-400 text-white px-2 py-0.5 rounded-full uppercase">SOON</span>
+                            ) : (
+                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full uppercase">OK</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {/* 🟢 Đã dọn dẹp comment lỗi ở đây để đưa cấu trúc JSX về chuẩn */}
+                    {domPaginated.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="text-center p-14 text-sm font-medium text-slate-400">
+                          No domains found.
                         </td>
                       </tr>
-                    );
-                  })}
-                  {domPaginated.length === 0 && (
-                    <tr><td colSpan={8} className="text-center p-14 text-sm font-medium text-slate-400">No domains found.</td></tr>
-                  )}
-                </tbody>
-              </table>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Thanh phân trang nằm ngoài vùng cuộn để luôn cố định dễ nhìn */}
               <Pagination currentPage={domPage} totalItems={domSorted.length} itemsPerPage={ITEMS} onPageChange={setDomPage} />
             </div>
           </>
@@ -480,9 +497,17 @@ function DomainManagerPage() {
                   {expStats.totalVND > 0 && (
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-lg font-black text-amber-500">
-                        {expStats.totalVND.toLocaleString("vi-VN")}₫
+                        {expStats.totalVND.toLocaleString("vi-VN")}
                       </span>
                       <span className="text-[9px] font-black text-amber-400 uppercase">VND</span>
+                    </div>
+                  )}
+                  {expStats.totalUSDT > 0 && (
+                    <div className="flex items-baseline gap-1.5 border-t border-dashed border-slate-100 pt-1 mt-0.5">
+                      <span className="text-lg font-black text-green-600">
+                        {expStats.totalUSDT.toLocaleString("en-US")}
+                      </span>
+                      <span className="text-[9px] font-black text-green-400 uppercase">USDT</span>
                     </div>
                   )}
                 </div>
@@ -589,76 +614,111 @@ function DomainManagerPage() {
 
             {/* Expense Table */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-              <table className="w-full text-left table-fixed">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    <th className="p-4 w-[12%]">Registrant</th>
-                    <th className="p-4 w-[14%]">Type</th>
-                    <th className="p-4 w-[12%]">Date</th>
-                    <th className="p-4 w-[20%]">Website</th>
-                    <th className="p-4 w-[16%]">Ads Card</th>
-                    <th className="p-4 w-[10%] text-right">Amount</th>
-                    <th className="p-4 w-[16%]">Bill</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {expPaginated.map((e, i) => {
-                    const c = getExpColor(e.loaiChiPhi);
-                    return (
-                      <tr key={i} className="transition-all hover:bg-slate-50/60">
-                        <td className="p-4">
-                          <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg uppercase tracking-wider">
-                            {e.tenReg || "—"}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span className="text-[10px] font-black px-2.5 py-1 rounded-full uppercase"
-                            style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-                            {e.loaiChiPhi}
-                          </span>
-                        </td>
-                        <td className="p-4 text-[11px] text-slate-500 font-bold whitespace-nowrap">
-                          {e.ngayThanhToan || "—"}
-                        </td>
-                        <td className="p-4">
-                          <span className="text-sm font-bold text-slate-700 lowercase truncate block">
-                            {e.tenWeb || "—"}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span className="text-[11px] font-bold text-slate-600 truncate block">
-                            {e.tenTheAds || "—"}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right">
-                          <span className="text-sm font-black text-slate-900">
-                            {/k$/i.test(e.chiPhiRaw) || e.chiPhiVND > 0 ? (
-                              <span className="text-[11px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                                {e.chiPhiVND > 0 ? `${e.chiPhiVND.toLocaleString("vi-VN")}₫` : e.chiPhiRaw}
-                              </span>
+
+              {/* 🟢 BƯỚC 1: Bọc container này để kích hoạt vuốt ngang trên điện thoại */}
+              <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
+
+                {/* 🟢 BƯỚC 2: Thêm min-w-[1000px] để các cột dữ liệu không bị dính vào nhau khi thu nhỏ màn hình */}
+                <table className="w-full text-left table-fixed min-w-[1000px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <th className="p-4 w-[12%]">Registrant</th>
+                      <th className="p-4 w-[14%]">Type</th>
+                      <th className="p-4 w-[12%]">Date</th>
+                      <th className="p-4 w-[20%]">Website</th>
+                      <th className="p-4 w-[16%]">Ads Card</th>
+                      <th className="p-4 w-[10%] text-right">Amount</th>
+                      <th className="p-4 w-[16%]">Bill</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {expPaginated.map((e, i) => {
+                      const c = getExpColor(e.loaiChiPhi);
+                      return (
+                        <tr key={i} className="transition-all hover:bg-slate-50/60">
+                          <td className="p-4">
+                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg uppercase tracking-wider">
+                              {e.tenReg || "—"}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <span className="text-[10px] font-black px-2.5 py-1 rounded-full uppercase"
+                              style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
+                              {e.loaiChiPhi}
+                            </span>
+                          </td>
+                          <td className="p-4 text-[11px] text-slate-500 font-bold whitespace-nowrap">
+                            {e.ngayThanhToan || "—"}
+                          </td>
+                          <td className="p-4">
+                            <span className="text-sm font-bold text-slate-700 lowercase truncate block">
+                              {e.tenWeb || "—"}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <span className="text-[11px] font-bold text-slate-600 truncate block">
+                              {e.tenTheAds || "—"}
+                            </span>
+                          </td>
+
+                          <td className="p-4 text-right">
+                            <span className="text-sm font-black text-slate-900">
+                              {/* 1. Nếu là USDT */}
+                              {e.chiPhiUSDT > 0 ? (
+                                <span className="text-[11px] font-black text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-200">
+                                  {e.chiPhiUSDT} USDT
+                                </span>
+                              ) :
+                                /* 2. Nếu là VND (Có chữ k hoặc parse ra tiền VND) */
+                                /k$/i.test(e.chiPhiRaw) || e.chiPhiVND > 0 ? (
+                                  <span className="text-[11px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                                    {e.chiPhiVND > 0 ? `${e.chiPhiVND.toLocaleString("vi-VN")} VND` : e.chiPhiRaw}
+                                  </span>
+                                ) : (
+                                  /* 3. Ngược lại là USD */
+                                  fmtUSD(e.chiPhiUSD || parseFloat(e.chiPhiRaw.replace(/[^0-9.-]/g, "")) || 0)
+                                )}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            {e.billChiPhi ? (
+                              <div className="flex flex-col gap-1 max-w-full">
+                                {e.billChiPhi
+                                  .split(",")
+                                  .map((link) => link.trim())
+                                  .filter(Boolean)
+                                  .map((cleanLink, index, arr) => (
+                                    <a
+                                      key={index}
+                                      href={cleanLink}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-[10px] font-black text-blue-500 hover:text-blue-700 underline underline-offset-2 truncate block"
+                                      title={cleanLink}
+                                    >
+                                      {arr.length > 1 ? `View bill #${index + 1} ↗` : "View bill ↗"}
+                                    </a>
+                                  ))}
+                              </div>
                             ) : (
-                              fmtUSD(e.chiPhiUSD || parseFloat(e.chiPhiRaw.replace(/[^0-9.-]/g, "")) || 0)
+                              <span className="text-slate-300 text-[11px]">—</span>
                             )}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          {e.billChiPhi ? (
-                            <a href={e.billChiPhi} target="_blank" rel="noreferrer"
-                              className="text-[10px] font-black text-blue-500 hover:text-blue-700 underline underline-offset-2 truncate block">
-                              View bill ↗
-                            </a>
-                          ) : (
-                            <span className="text-slate-300 text-[11px]">—</span>
-                          )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {expPaginated.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="text-center p-14 text-sm font-medium text-slate-400">
+                          No expense records found.
                         </td>
                       </tr>
-                    );
-                  })}
-                  {expPaginated.length === 0 && (
-                    <tr><td colSpan={7} className="text-center p-14 text-sm font-medium text-slate-400">No expense records found.</td></tr>
-                  )}
-                </tbody>
-              </table>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Thanh phân trang nằm ngoài vùng cuộn để luôn cố định vị trí trực quan */}
               <Pagination currentPage={expPage} totalItems={expZoneB.length} itemsPerPage={ITEMS} onPageChange={setExpPage} />
             </div>
           </>
