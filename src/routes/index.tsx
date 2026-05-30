@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next"; // 🌐 Đã import chuẩn
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
   Tooltip as RechartsTooltip, Legend
@@ -35,6 +36,7 @@ function Main() {
     refetchOnWindowFocus: true,
   });
 
+  const { t } = useTranslation(); // 🌐 Khai báo hàm t() cho Component chính
 
   const { data: allData = [] } = useQuery({
     queryKey: ["domainsAll"],
@@ -53,9 +55,6 @@ function Main() {
     const shopifyCount = data.filter(d => d.type?.toLowerCase().includes('shopify')).length;
     const wordPressCount = data.filter(d => d.type?.toLowerCase().includes('wordpress')).length;
     const otherPlatform = total - shopifyCount - wordPressCount;
-
-
-
 
     const shopifyExp = data.reduce((acc: any[], d) => {
       // 1. Must be Shopify and NOT canceled plan
@@ -94,9 +93,6 @@ function Main() {
     };
   }, [data, allData]);
 
-
-
-
   const platformData = [
     { name: "Shopify", value: stats.shopifyCount, color: "#10b981" },
     { name: "WordPress", value: stats.wordPressCount, color: "#3b82f6" },
@@ -107,7 +103,7 @@ function Main() {
     <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
       <div className="flex flex-col items-center gap-4">
         <div className="animate-spin h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full" />
-        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Loading data...</p>
+        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">{t("loadingData")}</p>
       </div>
     </div>
   );
@@ -120,34 +116,34 @@ function Main() {
         <div className="border-b border-slate-200 pb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 uppercase">
-              Website Management <span className="text-indigo-600">Dashboard</span>
+              {t("webManagement")} <span className="text-indigo-600">{t("dashboard")}</span>
             </h1>
             <p className="text-slate-500 text-[11px] font-bold uppercase tracking-[0.2em] mt-1">
-              Website operational status
+              {t("webOperationalStatus")}
             </p>
           </div>
 
           {/* Indicator showing data is being refreshed in background */}
           <div className={`flex items-center gap-2 transition-opacity duration-500 ${isFetching ? 'opacity-100' : 'opacity-0'}`}>
             <div className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
-            <span className="text-indigo-600 text-[10px] font-bold uppercase tracking-widest">Live Syncing</span>
+            <span className="text-indigo-600 text-[10px] font-bold uppercase tracking-widest">{t("liveSyncing")}</span>
           </div>
         </div>
 
         {/* 1. OVERVIEW STATS */}
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-5">
-          <StatCard label="Total Raw Websites" val={stats.rawTotal} sub="All domains" color="text-slate-700" icon="🌐" />
-          <StatCard label="Total Filtered Websites" val={stats.total} sub="Cleaned data" color="text-slate-900" icon="📊" />
-          <StatCard label="Shopify" val={stats.shopifyCount} sub="E-commerce" color="text-emerald-600" icon="🛍️" />
-          <StatCard label="WordPress" val={stats.wordPressCount} sub="E-commerce" color="text-blue-600" icon="📝" />
-          <StatCard label="Other" val={stats.otherPlatform} sub="Uncategorized" color="text-slate-500" icon="📁" />
-          <StatCard label="Inactive" val={stats.canceled} sub="Not active" color="text-rose-500" icon="🛑" />
+          <StatCard label={t("totalRawWebsites")} val={stats.rawTotal} sub={t("allDomains")} color="text-slate-700" icon="🌐" />
+          <StatCard label={t("totalFilteredWebsites")} val={stats.total} sub={t("cleanedData")} color="text-slate-900" icon="📊" />
+          <StatCard label="Shopify" val={stats.shopifyCount} sub={t("ecommerce")} color="text-emerald-600" icon="🛍️" />
+          <StatCard label="WordPress" val={stats.wordPressCount} sub={t("ecommerce")} color="text-blue-600" icon="📝" />
+          <StatCard label={t("other")} val={stats.otherPlatform} sub={t("uncategorized")} color="text-slate-500" icon="📁" />
+          <StatCard label={t("inactive")} val={stats.canceled} sub={t("notActive")} color="text-rose-500" icon="🛑" />
         </div>
 
         {/* 2. CHARTS & ALERTS */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm flex flex-col items-center">
-            <h3 className="text-[10px] font-bold text-slate-400 mb-6 uppercase tracking-widest self-start">Platform Distribution</h3>
+            <h3 className="text-[10px] font-bold text-slate-400 mb-6 uppercase tracking-widest self-start">{t("platformDistribution")}</h3>
             <div className="h-[240px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -171,7 +167,7 @@ function Main() {
           <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
               <h3 className="text-[10px] font-bold text-emerald-600 mb-5 uppercase tracking-widest flex items-center justify-between">
-                <span className="flex items-center gap-2">🛒 Shopify Expiring Soon</span>
+                <span className="flex items-center gap-2">🛒 {t("shopifyExpiringSoon")}</span>
                 {/* Badge showing item count */}
                 <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[11px]">
                   {stats.shopifyExp.length}
@@ -182,7 +178,7 @@ function Main() {
 
             <div className="bg-indigo-950 p-8 rounded-[32px] shadow-xl border border-indigo-900">
               <h3 className="text-[10px] font-bold text-indigo-300 mb-5 uppercase tracking-widest flex items-center justify-between">
-                <span className="flex items-center gap-2">🌐 Domain Expiring Soon</span>
+                <span className="flex items-center gap-2">🌐 {t("domainExpiringSoon")}</span>
                 {/* Badge showing item count */}
                 <span className="bg-indigo-500/30 text-indigo-100 px-2 py-0.5 rounded-full text-[11px]">
                   {stats.domainExp.length}
@@ -200,19 +196,19 @@ function Main() {
             <div className="flex items-center gap-6">
               <div className="h-14 w-1 rounded-full bg-indigo-500 hidden md:block" />
               <div>
-                <p className="text-indigo-300/60 text-[10px] uppercase font-bold tracking-widest mb-1">Operational Status</p>
+                <p className="text-indigo-300/60 text-[10px] uppercase font-bold tracking-widest mb-1">{t("operationalStatus")}</p>
                 <div className="flex items-baseline gap-3">
                   <span className="text-4xl font-bold tracking-tighter">{stats.active}</span>
-                  <span className="text-indigo-200/70 text-sm font-medium">Active</span>
+                  <span className="text-indigo-200/70 text-sm font-medium">{t("active")}</span>
                   <span className="text-indigo-800 mx-2 text-xl">/</span>
                   <span className="text-2xl font-bold text-rose-400">{stats.canceled}</span>
-                  <span className="text-indigo-400 text-sm italic font-medium ml-1">Archived</span>
+                  <span className="text-indigo-400 text-sm italic font-medium ml-1">{t("archived")}</span>
                 </div>
               </div>
             </div>
             <div className="flex flex-wrap justify-center gap-4 w-full lg:w-auto">
-              <FooterBadge label="Shopify Renewals" count={stats.shopifyExp.length} color="text-emerald-400" />
-              <FooterBadge label="Domain Renewals" count={stats.domainExp.length} color="text-indigo-300" />
+              <FooterBadge label={t("shopifyRenewals")} count={stats.shopifyExp.length} color="text-emerald-400" />
+              <FooterBadge label={t("domainRenewals")} count={stats.domainExp.length} color="text-indigo-300" />
             </div>
           </div>
         </div>
@@ -221,7 +217,7 @@ function Main() {
   );
 }
 
-// --- CHILD COMPONENTS (Keep as is or minor style tweaks) ---
+// --- CHILD COMPONENTS ---
 
 function StatCard({ label, val, sub, color, icon }: any) {
   return (
@@ -248,20 +244,27 @@ function FooterBadge({ label, count, color }: any) {
 }
 
 function AlertList({ list, label, isDark = false }: any) {
+  const { t } = useTranslation(); // 🌐 Khai báo hàm t() để phục vụ các text trong danh sách Con
+
   if (list.length === 0) return (
     <div className="py-12 text-center opacity-30">
       <div className="text-xl mb-2">✨</div>
-      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500">All good</div>
+      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{t("allGood")}</div>
     </div>
   );
+
   return (
     <div className="space-y-3 max-h-[280px] overflow-y-auto pr-2 custom-scrollbar">
       {list.sort((a: any, b: any) => a.days - b.days).map((item: any, i: number) => (
         <div key={i} className={`p-4 rounded-xl border transition-all ${isDark ? 'bg-indigo-900/40 border-indigo-800 hover:bg-indigo-900/60' : 'bg-slate-50 border-slate-200 hover:border-indigo-200'}`}>
           <div className={`text-[13px] font-bold truncate ${isDark ? 'text-indigo-100' : 'text-slate-800'}`}>{item.domain}</div>
           <div className="flex justify-between items-center mt-3">
-            <span className={`text-[10px] font-bold ${item.days <= 3 ? 'text-rose-400' : isDark ? 'text-indigo-300' : 'text-slate-500'}`}>{item.days} days left</span>
-            <span className={`text-[9px] font-bold uppercase px-3 py-1 rounded-lg ${item.days <= 3 ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white'}`}>Renew</span>
+            <span className={`text-[10px] font-bold ${item.days <= 3 ? 'text-rose-400' : isDark ? 'text-indigo-300' : 'text-slate-500'}`}>
+              {item.days} {t("daysLeft")}
+            </span>
+            <span className={`text-[9px] font-bold uppercase px-3 py-1 rounded-lg ${item.days <= 3 ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white'}`}>
+              {t("renew")}
+            </span>
           </div>
         </div>
       ))}

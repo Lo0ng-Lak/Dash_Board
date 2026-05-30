@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, useEffect } from "react";
+import { useTranslation } from "react-i18next"; // 🌐 Import hook dịch thuật
 import { getLatestWebData } from "../lib/dataService";
 
 export const Route = createFileRoute("/domains")({
@@ -8,7 +9,6 @@ export const Route = createFileRoute("/domains")({
 });
 
 const ITEMS_PER_PAGE = 10;
-
 
 const RenderRebuildDots = ({ countString }: { countString: string }) => {
   const count = parseInt(countString.replace(/[^0-9]/g, "")) || 0;
@@ -41,10 +41,11 @@ const calculateDaysLeft = (dateStr: string) => {
 };
 
 function Dashboard() {
+  const { t } = useTranslation(); // 🌐 Gọi hook sử dụng đa ngôn ngữ
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [filterStatus, setFilterStatus] = useState("all");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc"); // Add sort order state
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // 1. INTEGRATE USEQUERY (Sync every 30s)
   const { data: rawData = [], isLoading, isFetching } = useQuery({
@@ -54,9 +55,7 @@ function Dashboard() {
   });
 
   // 2. LOGIC LỌC & SẮP XẾP
-  // 2. LOGIC LỌC & SẮP XẾP
   const filteredData = useMemo(() => {
-    // BƯỚC 1: Lọc dữ liệu theo Search và Status trước
     let result = rawData.filter(item => {
       const matchesSearch =
         item.domain.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -70,13 +69,8 @@ function Dashboard() {
       return matchesSearch && matchesStatus;
     });
 
-    // STEP 2: Handle display "Newest" or "Oldest"
-    // By default want oldest at top (natural order of dataService currently reversed)
-    // If sortOrder is "asc" (oldest first), keep array as is
-    // If sortOrder is "desc" (newest first), reverse the array
     return sortOrder === "desc" ? [...result].reverse() : result;
   }, [rawData, searchTerm, filterStatus, sortOrder]);
-
 
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
   const currentItems = filteredData.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -112,21 +106,19 @@ function Dashboard() {
     ));
   };
 
-  if (isLoading) return <div className="p-10 text-center font-medium text-slate-400 animate-pulse"> Loading Domain Data...</div>;
+  if (isLoading) return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">{t("loadingDomainData")}</div>;
 
   return (
-
-
     <div className="min-h-screen bg-[#FDFCFB] p-6 text-slate-800 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
 
         <div className="flex flex-col md:flex-row justify-between items-end gap-4">
           <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Domain Management</h1>
-            <p className="text-slate-500 font-medium text-sm">Domain management system and related information.</p>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("domainManagement")}</h1>
+            <p className="text-slate-500 font-medium text-sm">{t("domainSystemDesc")}</p>
           </div>
-
         </div>
+
         {/* SEARCH & FILTER BAR */}
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
@@ -134,19 +126,19 @@ function Dashboard() {
               <span className="absolute left-3 top-2.5 text-slate-400 text-xs">🔍</span>
               <input
                 type="text"
-                placeholder="Search domain, dev, or customer..."
+                placeholder={t("searchPlaceholder")}
                 className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
 
-            {/* NÚT LỌC TỪ CUỐI DANH SÁCH (SẮP XẾP) */}
+            {/* NÚT SẮP XẾP */}
             <button
               onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              className="..."
+              className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg flex items-center gap-1 transition-all"
             >
-              {sortOrder === "asc" ? "⬇️ Newest First" : "⬆️ Oldest First"}
+              {sortOrder === "asc" ? `⬇️ ${t("newestFirst")}` : `⬆️ ${t("oldestFirst")}`}
             </button>
           </div>
 
@@ -156,9 +148,9 @@ function Dashboard() {
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
             >
-              <option value="all">All status</option>
-              <option value="active">🟢 Active</option>
-              <option value="canceled">🔴 Canceled</option>
+              <option value="all">{t("allStatus")}</option>
+              <option value="active">🟢 {t("active")}</option>
+              <option value="canceled">🔴 {t("canceled")}</option>
             </select>
 
             {/* Background sync indicator */}
@@ -170,26 +162,21 @@ function Dashboard() {
 
         {/* DATA TABLE */}
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
-
-          {/* 🟢 BƯỚC 1: Bọc container này để kích hoạt vuốt ngang trên điện thoại */}
           <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-
-            {/* 🟢 BƯỚC 2: Thêm min-w-[1050px] để các cột chứa thông tin dài không bị vỡ hoặc dính chữ */}
             <table className="w-full text-sm text-left border-collapse min-w-[1050px]">
               <thead className="bg-[#F9FAF9] text-slate-400 font-bold uppercase text-[9px] tracking-[0.15em] border-b">
                 <tr>
-                  <th className="p-5 text-center w-12">No.</th>
-                  <th className="p-5">Domain</th>
-                  <th className="p-5">Staff</th>
-                  <th className="p-5">Operations</th>
-                  <th className="p-5">Shopify Expiry</th>
-                  <th className="p-5">Domain Expiry</th>
-                  <th className="p-5">Platform</th>
+                  <th className="p-5 text-center w-12">{t("no")}</th>
+                  <th className="p-5">{t("domain")}</th>
+                  <th className="p-5">{t("staff")}</th>
+                  <th className="p-5">{t("operations")}</th>
+                  <th className="p-5">{t("shopifyExpiry")}</th>
+                  <th className="p-5">{t("domainExpiry")}</th>
+                  <th className="p-5">{t("platform")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {currentItems.map((item, idx) => {
-                  // Display index: (current page - 1) * items per page + current index + 1
                   const displayIndex = (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
                   return (
                     <tr key={item.domain + idx} className="hover:bg-slate-50/50 transition-colors">
@@ -203,7 +190,7 @@ function Dashboard() {
 
                       <td className="p-5">
                         <div className="text-slate-700 font-semibold text-xs">Dev: {item.dev}</div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 italic">Registered by: {item.regBy}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 italic">{t("registeredBy")}: {item.regBy}</div>
                       </td>
 
                       <td className="p-5">
@@ -211,11 +198,11 @@ function Dashboard() {
                           <RenderRebuildDots countString={item.rebuildCount} />
                           <div className="flex flex-wrap gap-1">
                             {item.webhookStatus === "Đã thay" ? (
-                              <span className="text-[8px] bg-purple-50 text-purple-600 border border-purple-100 px-1.5 py-0.5 rounded font-black">WEBHOOK (DONE)</span>
+                              <span className="text-[8px] bg-purple-50 text-purple-600 border border-purple-100 px-1.5 py-0.5 rounded font-black">{t("webhookDone")}</span>
                             ) : item.webhookStatus === "Chưa thay webhook" ? (
-                              <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded font-black">NOT WEBHOOK CHANGED</span>
+                              <span className="text-[8px] bg-amber-50 text-amber-600 border border-amber-100 px-1.5 py-0.5 rounded font-black">{t("notWebhookChanged")}</span>
                             ) : (
-                              <span className="text-[8px] bg-slate-50 text-slate-400 border border-slate-100 px-1.5 py-0.5 rounded font-black">NOT DETERMINED</span>
+                              <span className="text-[8px] bg-slate-50 text-slate-400 border border-slate-100 px-1.5 py-0.5 rounded font-black">{t("notDetermined")}</span>
                             )}
                           </div>
                         </div>
@@ -227,10 +214,10 @@ function Dashboard() {
                           {!item.isCanceled && item.expiryDateShopify !== "—" && (() => {
                             const days = calculateDaysLeft(item.expiryDateShopify);
                             return days !== null ? (
-                              <span className={`text-[10px] font-bold uppercase tracking-tight ${days <= 7 ? 'text-red-500' : 'text-blue-500'}`}>{days} days left</span>
+                              <span className={`text-[10px] font-bold uppercase tracking-tight ${days <= 7 ? 'text-red-500' : 'text-blue-500'}`}>{days} {t("daysLeft")}</span>
                             ) : null;
                           })()}
-                          <div className="text-[9px] text-slate-400 italic font-medium">Registered: {item.startDate || "—"}</div>
+                          <div className="text-[9px] text-slate-400 italic font-medium">{t("registeredDate")}: {item.startDate || "—"}</div>
                         </div>
                       </td>
 
@@ -239,13 +226,13 @@ function Dashboard() {
                           {item.expiryDateSheet || "—"}
                         </div>
                         <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded-md w-fit ${item.daysLeft <= 7 ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
-                          {item.daysLeft} days left
+                          {item.daysLeft} {t("daysLeft")}
                         </div>
                       </td>
 
                       <td className="p-5">
                         {item.isCanceled && item.isHuyRegMoi ? (
-                          <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-500 rounded-full font-bold border border-red-100 line-through decoration-red-400">× Shopify (canceled)</span>
+                          <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-500 rounded-full font-bold border border-red-100 line-through decoration-red-400">× {t("shopifyCanceled")}</span>
                         ) : (
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${item.type?.toLowerCase() === 'shopify' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
                             {item.type}
@@ -259,10 +246,10 @@ function Dashboard() {
             </table>
           </div>
 
-          {/* PAGINATION: Giữ nguyên nằm ngoài thanh cuộn để cố định dễ bấm */}
+          {/* PAGINATION */}
           <div className="p-4 border-t flex items-center justify-between bg-[#F9FAF9]">
             <div className="text-[11px] text-slate-400 font-medium">
-              Showing <span className="text-slate-600 font-bold">{currentItems.length}</span> of <span className="text-slate-600 font-bold">{filteredData.length}</span> domains
+              {t("showing")} <span className="text-slate-600 font-bold">{currentItems.length}</span> {t("of")} <span className="text-slate-600 font-bold">{filteredData.length}</span> {t("domains")}
             </div>
             <div className="flex items-center gap-1">
               <button

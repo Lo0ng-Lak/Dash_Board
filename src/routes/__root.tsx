@@ -9,6 +9,7 @@ import {
   useLocation,
 } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next"; // 🌐 Import thư viện dịch thuật
 
 import appCss from "../styles.css?url";
 
@@ -130,6 +131,10 @@ function RootComponent() {
   // 📱 State điều khiển đóng/mở menu trên Mobile
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // 🌐 Sử dụng i18next điều khiển đổi ngôn ngữ thay cho useState thuần
+  const { t, i18n } = useTranslation();
+  const currentLang = i18n.language;
+
   // Tự động đóng menu mobile mỗi khi chuyển trang
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -138,6 +143,9 @@ function RootComponent() {
   // Check authentication khi component mounts hoặc pathname thay đổi
   useEffect(() => {
     const checkAuth = () => {
+      // Đảm bảo không lỗi crash trên môi trường Server (SSR)
+      if (typeof window === "undefined") return;
+
       const authToken = localStorage.getItem("authToken");
       const isLoggedIn = !!authToken;
       const isLoginPage = location.pathname === "/login";
@@ -153,6 +161,14 @@ function RootComponent() {
 
     checkAuth();
   }, [location.pathname, router]);
+
+  // Hàm chuyển đổi ngôn ngữ an toàn và lưu vào bộ nhớ trình duyệt
+  const changeLanguage = (lng: "vi" | "en") => {
+    i18n.changeLanguage(lng);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("lang", lng);
+    }
+  };
 
   // Show loading khi đang kiểm tra auth
   if (isLoading) {
@@ -183,27 +199,30 @@ function RootComponent() {
     );
   }
 
+  // 📋 Chuyển đổi 'label' sang 'labelKey' khớp chính xác với file i18n.ts
   const navItems = [
-    { to: "/", label: "Dashboard", icon: "📊", exact: true },
-    { to: "/domains", label: "Domains", icon: "🌐" },
-    { to: "/customers", label: "REG GMC", icon: "👥" },
-    { to: "/devs", label: "Dev GMC", icon: "🧑‍💻" },
-    { to: "/web-kpi", label: "Web KPI", icon: "📊" },
-    { to: "/invoices", label: "Invoices", icon: "🧾" },
-    { to: "/profile", label: "Profile", icon: "👤" },
-    { to: "/reports", label: "Reports", icon: "📈" },
-    { to: "/shopify", label: "Shopify", icon: "🛒" },
-    { to: "/wordpress", label: "WordPress", icon: "📝" },
-    { to: "/settings", label: "Settings", icon: "⚙️" },
+    { to: "/", labelKey: "dashboard", icon: "📊", exact: true },
+    { to: "/domains", labelKey: "domains", icon: "🌐" },
+    { to: "/customers", labelKey: "regGmc", icon: "👥" },
+    { to: "/devs", labelKey: "devGmc", icon: "🧑‍💻" },
+    { to: "/web-kpi", labelKey: "webKpi", icon: "📊" },
+    { to: "/invoices", labelKey: "invoices", icon: "🧾" },
+    { to: "/profile", labelKey: "profile", icon: "👤" },
+    { to: "/reports", labelKey: "reports", icon: "📈" },
+    { to: "/shopify", labelKey: "shopify", icon: "🛒" },
+    { to: "/wordpress", labelKey: "wordpress", icon: "📝" },
+    { to: "/settings", labelKey: "settings", icon: "⚙️" },
   ];
 
   const handleLogout = () => {
-    localStorage.removeItem("authToken");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("authToken");
+    }
     setIsAuthenticated(false);
     router.navigate({ to: "/login" });
   };
 
-  // Render các liên kết menu (dùng chung cho cả Desktop và Mobile để tránh lặp code)
+  // Render các liên kết menu (Sử dụng hàm t() để tự động dịch nhãn chữ)
   const renderNavLinks = () =>
     navItems.map((item) => (
       <Link
@@ -213,9 +232,39 @@ function RootComponent() {
         className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium text-slate-600 hover:bg-slate-50 data-[status=active]:bg-slate-900 data-[status=active]:text-white data-[status=active]:shadow-lg data-[status=active]:shadow-slate-200"
       >
         <span className="text-lg">{item.icon}</span>
-        <span>{item.label}</span>
+        <span>{t(item.labelKey)}</span>
       </Link>
     ));
+
+  // 🌟 KHỐI RENDER NÚT BẤM ĐỔI NGÔN NGỮ (Đồng bộ mượt mà theo trạng thái i18n)
+  const renderLanguageToggle = () => (
+    <div className="relative flex items-center bg-slate-100 p-1 rounded-xl w-full h-[36px] select-none border border-slate-200/60">
+      {/* Khối nền chuyển động chạy qua lại */}
+      <div
+        className="absolute top-1 bottom-1 rounded-lg bg-white shadow-sm border border-slate-200/40 transition-all duration-300 ease-out"
+        style={{
+          width: "calc(50% - 4px)",
+          left: currentLang === "vi" ? "4px" : "50%",
+        }}
+      />
+      <button
+        type="button"
+        className={`relative z-10 flex-1 text-center text-[10px] font-black transition-colors duration-200 ${currentLang === "vi" ? "text-slate-900" : "text-slate-400 hover:text-slate-600"
+          }`}
+        onClick={() => changeLanguage("vi")}
+      >
+        🇻🇳 TIẾNG VIỆT
+      </button>
+      <button
+        type="button"
+        className={`relative z-10 flex-1 text-center text-[10px] font-black transition-colors duration-200 ${currentLang === "en" ? "text-slate-900" : "text-slate-400 hover:text-slate-600"
+          }`}
+        onClick={() => changeLanguage("en")}
+      >
+        🇬🇧 ENGLISH
+      </button>
+    </div>
+  );
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -239,7 +288,7 @@ function RootComponent() {
 
         {/* ── 📱 MOBILE SIDEBAR DRAWER (Hiệu ứng trượt lướt) ── */}
         <div className={`fixed inset-0 z-50 md:hidden transition-all duration-300 ${isMobileMenuOpen ? "visible" : "invisible"}`}>
-          {/* Lớp nền mờ (Backdrop) - Bấm vào đây để đóng menu */}
+          {/* Lớp nền mờ (Backdrop) */}
           <div
             onClick={() => setIsMobileMenuOpen(false)}
             className={`absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 ${isMobileMenuOpen ? "opacity-100" : "opacity-0"}`}
@@ -265,13 +314,17 @@ function RootComponent() {
               {renderNavLinks()}
             </nav>
 
-            <div className="p-4 border-t space-y-3 bg-slate-50/50">
+            {/* Phần Bottom Mobile gồm Nút Ngôn ngữ và Thông tin User */}
+            <div className="p-4 border-t space-y-4 bg-slate-50/50">
+              {renderLanguageToggle()}
+
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-xs font-bold text-white border-2 border-white shadow-sm">
                   HN
                 </div>
                 <div className="text-sm">
                   <div className="font-bold text-slate-800">Huy Ngấy</div>
+                  {/* Sử dụng bản dịch cho nhãn logout/role nếu cần */}
                   <div className="text-[10px] text-slate-400 font-bold uppercase">Administrator</div>
                 </div>
               </div>
@@ -279,13 +332,13 @@ function RootComponent() {
                 onClick={handleLogout}
                 className="w-full px-3 py-2 text-sm text-slate-600 bg-white hover:bg-slate-50 rounded-lg transition-all font-medium border border-slate-200"
               >
-                Logout
+                {t("logout")}
               </button>
             </div>
           </aside>
         </div>
 
-        {/* ── 🖥️ DESKTOP SIDEBAR (Giữ nguyên giao diện máy tính của bạn) ── */}
+        {/* ── 🖥️ DESKTOP SIDEBAR ── */}
         <aside className="hidden md:flex w-64 shrink-0 flex-col border-r bg-white h-full">
           <div className="px-5 py-5 border-b">
             <div className="text-lg font-black text-slate-900 tracking-tight">WebManager</div>
@@ -296,7 +349,10 @@ function RootComponent() {
             {renderNavLinks()}
           </nav>
 
-          <div className="p-4 border-t space-y-3">
+          {/* Phần Bottom Desktop gồm Nút Ngôn ngữ và Thông tin User */}
+          <div className="p-4 border-t space-y-4">
+            {renderLanguageToggle()}
+
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-xs font-bold text-white border-2 border-white shadow-sm">
                 HN
@@ -310,7 +366,7 @@ function RootComponent() {
               onClick={handleLogout}
               className="w-full px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-all font-medium border border-slate-200 hover:border-slate-300"
             >
-              Logout
+              {t("logout")}
             </button>
           </div>
         </aside>

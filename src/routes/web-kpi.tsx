@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import { getAllDataWeb, WebRecord } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
+import { useTranslation } from "react-i18next";
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Cell, PieChart, Pie, LabelList
@@ -37,8 +38,8 @@ function getDevColor(devName: string, allDevs: string[]) {
 
 function getStatusBucket(status: string): "done" | "pending" | "check" | "unknown" {
     const s = (status ?? "").toLowerCase().trim();
-    if (s.includes("đã hoàn thành")) return "done";
-    if (s.includes("chưa")) return "pending";
+    if (s.includes("đã hoàn thành") || s.includes("completed") || s.includes("done")) return "done";
+    if (s.includes("chưa") || s.includes("pending") || s.includes("in progress")) return "pending";
     if (s.includes("check")) return "check";
     return "unknown";
 }
@@ -50,8 +51,7 @@ function buildStats(records: WebRecord[]): DevMonthStat[] {
         if (getStatusBucket(r.status) !== "done") continue;
         const key = `${r.dev}|${r.month}`;
         if (!map.has(key)) {
-            const [y, m] = r.month.split("-");
-            map.set(key, { dev: r.dev, month: r.month, monthLabel: `Month ${parseInt(m)}/${y}`, websites: [], count: 0 });
+            map.set(key, { dev: r.dev, month: r.month, monthLabel: "", websites: [], count: 0 });
         }
         const s = map.get(key)!;
         s.websites.push(r.domain);
@@ -63,6 +63,7 @@ function buildStats(records: WebRecord[]): DevMonthStat[] {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function WebsiteTagList({ websites, color }: { websites: string[]; color: (typeof DEV_COLORS)[0] }) {
+    const { t } = useTranslation();
     const [expanded, setExpanded] = useState(false);
     const shown = expanded ? websites : websites.slice(0, 3);
     const more = websites.length - 3;
@@ -77,13 +78,13 @@ function WebsiteTagList({ websites, color }: { websites: string[]; color: (typeo
             {!expanded && more > 0 && (
                 <button onClick={() => setExpanded(true)}
                     className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors">
-                    +{more} more
+                    +{more} {t("more", "more")}
                 </button>
             )}
             {expanded && (
                 <button onClick={() => setExpanded(false)}
                     className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors">
-                    Collapse
+                    {t("collapse", "Collapse")}
                 </button>
             )}
         </div>
@@ -93,6 +94,7 @@ function WebsiteTagList({ websites, color }: { websites: string[]; color: (typeo
 // ─── Main component ───────────────────────────────────────────────────────────
 
 function WebKPIPage() {
+    const { t } = useTranslation();
     const [records, setRecords] = useState<WebRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -112,7 +114,7 @@ function WebKPIPage() {
             setRecords(data);
             setError(null);
         } catch {
-            setError("Failed to load data.");
+            setError(t("failedToLoadData", "Failed to load data."));
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -121,20 +123,17 @@ function WebKPIPage() {
 
     // ── Tự động cập nhật dữ liệu (Polling) ─────────────────────────────────────
     useEffect(() => {
-        load(); // Lần đầu tiên vào trang
-
-        // Thiết lập tự động chạy lại sau mỗi 30 giây (30000ms)
+        load();
         const intervalId = setInterval(() => {
             load(true);
         }, 30000);
-
-        // Clear interval khi component unmount để tránh leak bộ nhớ
         return () => clearInterval(intervalId);
     }, []);
 
     // ── 1. Static dropdown options ───────────────────────────────────────────
     const baseStats = useMemo(() => buildStats(records), [records]);
     const allDevs = useMemo(() => [...new Set(baseStats.map(s => s.dev))].sort(), [baseStats]);
+
     const allMonths = useMemo(() =>
         [...new Set(baseStats.map(s => s.month))].sort((a, b) => b.localeCompare(a)),
         [baseStats]);
@@ -163,35 +162,53 @@ function WebKPIPage() {
     }, [zoneARecords]);
 
     const topDevInfo = useMemo(() => {
-        const ym = selectedMonth !== "all"
-            ? selectedMonth
-            : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+        const pool = records.filter(r => {
+            const isDone = getStatusBucket(r.status) === "done";
+            if (!isDone) return false;
+            return selectedMonth === "all" || r.month === selectedMonth;
+        });
 
-        const pool = records.filter(r =>
-            r.month === ym && getStatusBucket(r.status) === "done"
-        );
         if (!pool.length) return null;
 
         const counts: Record<string, number> = {};
-        pool.forEach(r => { if (r.dev) counts[r.dev] = (counts[r.dev] || 0) + 1; });
+        pool.forEach(r => {
+            if (r.dev) counts[r.dev] = (counts[r.dev] || 0) + 1;
+        });
 
         let top = { dev: "", count: 0 };
         Object.entries(counts).forEach(([dev, count]) => {
             if (count > top.count) top = { dev, count };
         });
 
-        const [y, m] = ym.split("-");
-        return top.count > 0
-            ? { ...top, label: `Month ${parseInt(m)}/${y}` }
-            : null;
+        if (top.count === 0) return null;
+
+        // Chuẩn hóa dữ liệu trả về để object luôn luôn có cấu trúc giống nhau
+        if (selectedMonth === "all") {
+            return {
+                dev: top.dev,
+                count: top.count,
+                isAllTime: true,
+                year: "",
+                month: 0
+            };
+        } else {
+            const [y, m] = selectedMonth.split("-");
+            return {
+                dev: top.dev,
+                count: top.count,
+                isAllTime: false,
+                year: y,
+                month: parseInt(m)
+            };
+        }
     }, [records, selectedMonth]);
 
     const pieData = useMemo(() => [
-        { name: "Completed", value: currentStats.done, color: "#10b981" },
-        { name: "In Progress", value: currentStats.pending, color: "#f59e0b" },
-        { name: "Need Check", value: currentStats.check, color: "#3b82f6" },
-        { name: "Unclassified", value: currentStats.unknown, color: "#94a3b8" },
-    ].filter(d => d.value > 0), [currentStats]);
+        { name: t("statusCompleted", "Completed"), value: currentStats.done, color: "#10b981" },
+        { name: t("statusInProgress", "In Progress"), value: currentStats.pending, color: "#f59e0b" },
+        { name: t("statusNeedCheck", "Need Check"), value: currentStats.check, color: "#3b82f6" },
+        { name: t("statusUnclassified", "Unclassified"), value: currentStats.unknown, color: "#94a3b8" },
+    ].filter(d => d.value > 0), [currentStats, t]);
 
     const devBarData = useMemo(() => {
         const map: Record<string, { name: string; done: number }> = {};
@@ -228,7 +245,7 @@ function WebKPIPage() {
     if (loading) {
         return (
             <div className="p-10 text-center font-medium text-slate-400 animate-pulse">
-                Loading data...
+                {t("loadingData", "Loading data...")}
             </div>
         );
     }
@@ -245,11 +262,17 @@ function WebKPIPage() {
                 <div className="flex flex-col md:flex-row justify-between items-end gap-4">
                     <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                            <h1 className="text-3xl font-black tracking-tight text-slate-900">Web KPI Dashboard</h1>
-                            {/* Hiển thị một chấm nhỏ nhấp nháy báo hiệu đang auto-sync trong nền */}
-                            {refreshing && <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping inline-block mt-2" title="Auto syncing..." />}
+                            <h1 className="text-3xl font-black tracking-tight text-slate-900">
+                                {t("webKpiDashboard", "Web KPI Dashboard")}
+                            </h1>
+                            {refreshing && (
+                                <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping inline-block mt-2"
+                                    title={t("autoSyncing", "Auto syncing...")} />
+                            )}
                         </div>
-                        <p className="text-slate-500 font-medium text-sm">Track website completion status by dev &amp; month.</p>
+                        <p className="text-slate-500 font-medium text-sm">
+                            {t("dashboardSubTitle", "Track website completion status by dev & month.")}
+                        </p>
                     </div>
                 </div>
 
@@ -259,16 +282,22 @@ function WebKPIPage() {
                     {/* Total */}
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
                         <div>
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Websites</p>
+                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">
+                                {t("totalWebsites", "Total Websites")}
+                            </p>
                             <h2 className="text-2xl font-black text-slate-900 mt-1">{currentStats.total}</h2>
                         </div>
-                        <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">Current filter</p>
+                        <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">
+                            {t("currentFilter", "Current filter")}
+                        </p>
                     </div>
 
-                    {/* Unclassified (Chưa phân loại) */}
+                    {/* Unclassified */}
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-slate-400 border-t-2">
                         <div>
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Unclassified</p>
+                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">
+                                {t("statusUnclassified", "Unclassified")}
+                            </p>
                             <div className="flex items-baseline gap-2 mt-1">
                                 <h2 className="text-2xl font-black text-slate-600">{currentStats.unknown}</h2>
                                 <span className="text-[10px] font-bold text-slate-400">
@@ -276,13 +305,17 @@ function WebKPIPage() {
                                 </span>
                             </div>
                         </div>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-3">Unclassified</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-3">
+                            {t("statusUnclassified", "Unclassified")}
+                        </p>
                     </div>
 
                     {/* Completed */}
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-emerald-500 border-t-2">
                         <div>
-                            <p className="text-[9px] font-black uppercase text-emerald-500 tracking-[0.15em]">Completed</p>
+                            <p className="text-[9px] font-black uppercase text-emerald-500 tracking-[0.15em]">
+                                {t("statusCompleted", "Completed")}
+                            </p>
                             <div className="flex items-baseline gap-2 mt-1">
                                 <h2 className="text-2xl font-black text-emerald-600">{currentStats.done}</h2>
                                 <span className="text-[10px] font-bold text-emerald-400">
@@ -292,14 +325,16 @@ function WebKPIPage() {
                         </div>
                         <div className="mt-3 flex items-center gap-1 text-[9px] font-bold text-emerald-400">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            DONE
+                            {t("doneUpper", "DONE")}
                         </div>
                     </div>
 
                     {/* In Progress */}
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-amber-500 border-t-2">
                         <div>
-                            <p className="text-[9px] font-black uppercase text-amber-500 tracking-[0.15em]">In Progress</p>
+                            <p className="text-[9px] font-black uppercase text-amber-500 tracking-[0.15em]">
+                                {t("statusInProgress", "In Progress")}
+                            </p>
                             <div className="flex items-baseline gap-2 mt-1">
                                 <h2 className="text-2xl font-black text-amber-600">{currentStats.pending}</h2>
                                 <span className="text-[10px] font-bold text-amber-400">
@@ -307,13 +342,17 @@ function WebKPIPage() {
                                 </span>
                             </div>
                         </div>
-                        <p className="text-[9px] font-bold text-amber-400 uppercase mt-3">Pending</p>
+                        <p className="text-[9px] font-bold text-amber-400 uppercase mt-3">
+                            {t("pendingUpper", "Pending")}
+                        </p>
                     </div>
 
                     {/* Need Check */}
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-blue-500 border-t-2">
                         <div>
-                            <p className="text-[9px] font-black uppercase text-blue-500 tracking-[0.15em]">Need Check</p>
+                            <p className="text-[9px] font-black uppercase text-blue-500 tracking-[0.15em]">
+                                {t("statusNeedCheck", "Need Check")}
+                            </p>
                             <div className="flex items-baseline gap-2 mt-1">
                                 <h2 className="text-2xl font-black text-blue-600">{currentStats.check}</h2>
                                 <span className="text-[10px] font-bold text-blue-400">
@@ -321,16 +360,20 @@ function WebKPIPage() {
                                 </span>
                             </div>
                         </div>
-                        <p className="text-[9px] font-bold text-blue-400 uppercase mt-3">Awaiting QA</p>
+                        <p className="text-[9px] font-bold text-blue-400 uppercase mt-3">
+                            {t("awaitingQA", "Awaiting QA")}
+                        </p>
                     </div>
 
-
-
-                    {/* Top Dev */}
+                    {/* Top Dev Card */}
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-indigo-500 border-t-2">
                         <div>
                             <p className="text-[9px] font-black uppercase text-indigo-500 tracking-[0.15em]">
-                                {topDevInfo ? `Top Dev — ${topDevInfo.label}` : "Active Devs"}
+                                {topDevInfo
+                                    ? topDevInfo.isAllTime
+                                        ? `${t("topDev", "Top Dev")} — ${t("allTime", "All Time")}`
+                                        : `${t("topDev", "Top Dev")} — ${t("monthLabelFormat", { month: topDevInfo.month, year: topDevInfo.year })}`
+                                    : t("activeDevs", "Active Devs")}
                             </p>
                             <h2 className="text-2xl font-black text-indigo-600 mt-1 truncate">
                                 {topDevInfo ? topDevInfo.dev : currentStats.devCount}
@@ -338,8 +381,8 @@ function WebKPIPage() {
                         </div>
                         <p className="text-[9px] font-bold text-indigo-300 uppercase mt-3">
                             {topDevInfo
-                                ? `${topDevInfo.count} sites completed`
-                                : `${currentStats.devCount} devs in filter`}
+                                ? t("sitesCompletedCount", { count: topDevInfo.count, defaultValue: `${topDevInfo.count} sites completed` })
+                                : t("devsInFilterCount", { count: currentStats.devCount, defaultValue: `${currentStats.devCount} devs in filter` })}
                         </p>
                     </div>
 
@@ -349,7 +392,9 @@ function WebKPIPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Pie */}
                     <div className="lg:col-span-1 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                        <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Status Breakdown</h3>
+                        <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">
+                            {t("statusBreakdown", "Status Breakdown")}
+                        </h3>
                         <div className="h-48">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
@@ -372,22 +417,21 @@ function WebKPIPage() {
 
                     {/* Bar */}
                     <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                        <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Sites Completed by Dev</h3>
+                        <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">
+                            {t("sitesCompletedByDev", "Sites Completed by Dev")}
+                        </h3>
                         <div className="h-48">
                             <ResponsiveContainer width="100%" height="100%">
-                                {/* Thêm margin top để số trên đỉnh cột không bị che khuất */}
                                 <BarChart data={devBarData} margin={{ top: 20, right: 10, left: 10, bottom: 5 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
                                     <YAxis hide />
                                     <Tooltip
                                         contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}
-                                        formatter={(v: number) => [v, "Sites completed"]}
+                                        formatter={(v: number) => [v, t("sitesCompletedTooltip", "Sites completed")]}
                                     />
                                     <Bar dataKey="done" radius={[4, 4, 0, 0]} barSize={28} name="done">
-                                        {/* Hiển thị số lượng trực tiếp trên đỉnh cột */}
                                         <LabelList dataKey="done" position="top" offset={8} style={{ fontSize: 11, fontWeight: 800, fill: '#475569' }} />
-
                                         {devBarData.map((_, i) => (
                                             <Cell key={i} fill={DEV_COLORS[i % DEV_COLORS.length].bar} />
                                         ))}
@@ -402,7 +446,7 @@ function WebKPIPage() {
                 <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-3 shadow-sm">
                     <input
                         type="text"
-                        placeholder="Search dev or domain... (table only)"
+                        placeholder={t("searchPlaceholderTableOnly", "Search dev or domain... (table only)")}
                         className="flex-1 min-w-[220px] px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl border border-transparent focus:border-blue-100 transition-all"
                         value={search}
                         onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
@@ -412,10 +456,14 @@ function WebKPIPage() {
                         value={selectedMonth}
                         onChange={e => { setSelectedMonth(e.target.value); setCurrentPage(1); }}
                     >
-                        <option value="all">📅 ALL MONTHS</option>
-                        {allMonths.map(ym => {
+                        <option value="all">📅 {t("allMonths", "ALL MONTHS")}</option>
+                        {allMonths.map((ym: string) => {
                             const [y, m] = ym.split("-");
-                            return <option key={ym} value={ym}>MONTH {parseInt(m)}/{y}</option>;
+                            return (
+                                <option key={ym} value={ym}>
+                                    {t("monthLabelFormat", { month: parseInt(m), year: y }).toUpperCase()}
+                                </option>
+                            );
                         })}
                     </select>
                     <select
@@ -423,7 +471,7 @@ function WebKPIPage() {
                         value={selectedDev}
                         onChange={e => { setSelectedDev(e.target.value); setCurrentPage(1); }}
                     >
-                        <option value="all">👤 ALL DEVS</option>
+                        <option value="all">👤 {t("allDevsFilter", "ALL DEVS")}</option>
                         {allDevs.map(d => <option key={d} value={d}>{d.toUpperCase()}</option>)}
                     </select>
                     {(selectedMonth !== "all" || selectedDev !== "all" || search) && (
@@ -431,26 +479,22 @@ function WebKPIPage() {
                             onClick={() => { setSelectedMonth("all"); setSelectedDev("all"); setSearch(""); setCurrentPage(1); }}
                             className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
                         >
-                            ✕ Clear filters
+                            ✕ {t("clearFilters", "Clear filters")}
                         </button>
                     )}
                 </div>
 
                 {/* ── Table ── */}
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-
-                    {/* 🟢 BƯỚC 1: Bọc container này để kích hoạt vuốt ngang trên thiết bị di động */}
                     <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-
-                        {/* 🟢 BƯỚC 2: Thêm min-w-[1000px] để giữ form hiển thị cột Progress và WebsiteTagList được đẹp mắt */}
                         <table className="w-full text-left table-fixed min-w-[1000px]">
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                                    <th className="p-5 w-[18%]">Dev</th>
-                                    <th className="p-5 w-[10%]">Month</th>
-                                    <th className="p-5 w-[8%] text-center">Sites</th>
-                                    <th className="p-5 w-[14%]">Progress</th>
-                                    <th className="p-5 w-[50%]">Domains</th>
+                                    <th className="p-5 w-[18%]">{t("tableHeaderDev", "Dev")}</th>
+                                    <th className="p-5 w-[10%]">{t("tableHeaderMonth", "Month")}</th>
+                                    <th className="p-5 w-[8%] text-center">{t("tableHeaderSites", "Sites")}</th>
+                                    <th className="p-5 w-[14%]">{t("tableHeaderProgress", "Progress")}</th>
+                                    <th className="p-5 w-[50%]">{t("tableHeaderDomains", "Domains")}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
@@ -470,7 +514,7 @@ function WebKPIPage() {
                                             </td>
                                             <td className="p-5">
                                                 <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-lg uppercase tracking-wider whitespace-nowrap">
-                                                    M{parseInt(m)}/{y}
+                                                    {t("monthShortFormat", { month: parseInt(m), year: y, defaultValue: `M${parseInt(m)}/${y}` })}
                                                 </span>
                                             </td>
                                             <td className="p-5 text-center">
@@ -495,7 +539,7 @@ function WebKPIPage() {
                                 {paginated.length === 0 && (
                                     <tr>
                                         <td colSpan={5} className="text-center p-14 text-sm font-medium text-slate-400">
-                                            No matching records found.
+                                            {t("noMatchingRecords", "No matching records found.")}
                                         </td>
                                     </tr>
                                 )}
@@ -503,7 +547,6 @@ function WebKPIPage() {
                         </table>
                     </div>
 
-                    {/* Thanh phân trang nằm ngoài vùng cuộn để luôn cố định vị trí trực quan */}
                     <Pagination
                         currentPage={currentPage}
                         totalItems={tableData.length}
@@ -516,8 +559,6 @@ function WebKPIPage() {
         </div>
     );
 }
-
-// ─── Route ────────────────────────────────────────────────────────────────────
 
 export const Route = createFileRoute("/web-kpi")({
     component: WebKPIPage,

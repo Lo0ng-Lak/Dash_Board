@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getGMCVeData } from "../lib/dataService";
 import { Pagination } from "../components/pagination";
 import {
@@ -21,6 +22,8 @@ export const Route = createFileRoute("/devs")({
 });
 
 function DevDashboard() {
+  const { t } = useTranslation();
+
   // ==========================================
   // FILTERS & PAGINATION STATE MANAGEMENT
   // ==========================================
@@ -32,26 +35,22 @@ function DevDashboard() {
 
   const ITEMS_PER_PAGE = 10;
 
-  // Load GMC data of Dev room from API
   const { data: rawGmcData = [], isLoading } = useQuery<GMCAccountItem[]>({
     queryKey: ["gmcDevData"],
     queryFn: () => getGMCVeData(),
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    refetchInterval: 30000,
   });
 
-  // Reverse array so newest records are always at top of table
   const orderedFullData = useMemo(() => {
     return [...rawGmcData].reverse();
   }, [rawGmcData]);
 
-  // Helper function kiểm tra trạng thái linh hoạt (Chấp nhận mọi biến thể từ API)
   const isSuspended = (status: string) => {
     if (!status) return false;
     const s = status.toLowerCase().trim();
     return s === "đã sus" || s === "suspended" || s === "sus";
   };
 
-  // 🌟 ĐÃ CẬP NHẬT: Hàm tính số ngày sống chuẩn chỉnh giống hệt file trước
   const calculateDaysAlive = (dateStr: string) => {
     if (!dateStr || dateStr === "—") return null;
     try {
@@ -59,7 +58,6 @@ function DevDashboard() {
       const gmcDate = new Date(year, month - 1, day);
       const today = new Date();
 
-      // Reset giờ về 0 để tính toán ngày chính xác từng mốc
       gmcDate.setHours(0, 0, 0, 0);
       today.setHours(0, 0, 0, 0);
 
@@ -72,26 +70,28 @@ function DevDashboard() {
     }
   };
 
+  const parseCost = (costVal: string) => {
+    if (!costVal) return 0;
+    const costStr = costVal.replace(/,/g, ".");
+    const costNum = parseFloat(costStr.replace(/[^0-9.]/g, ""));
+    return isNaN(costNum) ? 0 : costNum;
+  };
+
   // ==========================================
   // ZONE 1: GLOBAL STATS
   // ==========================================
   const globalStats = useMemo(() => {
     const totalAcc = rawGmcData.length;
-    const totalDomains = new Set(rawGmcData.map(item => item.domain.trim().toLowerCase())).size;
+    const totalDomains = new Set(rawGmcData.map(item => item.domain?.trim().toLowerCase())).size;
     const totalLive = rawGmcData.filter(item => !isSuspended(item.status)).length;
     const totalSus = rawGmcData.filter(item => isSuspended(item.status)).length;
-
-    const totalCost = rawGmcData.reduce((sum, item) => {
-      const costStr = (item.cost || "0").replace(/,/g, "."); // Biến "1,18" thành "1.18"
-      const costNum = parseFloat(costStr.replace(/[^0-9.]/g, ""));
-      return sum + (isNaN(costNum) ? 0 : costNum);
-    }, 0);
+    const totalCost = rawGmcData.reduce((sum, item) => sum + parseCost(item.cost), 0);
 
     return { totalDomains, totalAcc, totalLive, totalSus, totalCost };
   }, [rawGmcData]);
 
   // ==========================================
-  // ZONE 2: FILTER BY DROPDOWN (Charts & dynamic cards)
+  // ZONE 2: FILTER BY DROPDOWN
   // ==========================================
   const dropdownFilteredData = useMemo(() => {
     return orderedFullData.filter((item: GMCAccountItem) => {
@@ -114,21 +114,16 @@ function DevDashboard() {
     const total = dropdownFilteredData.length;
     const live = dropdownFilteredData.filter((item: GMCAccountItem) => !isSuspended(item.status)).length;
     const sus = dropdownFilteredData.filter((item: GMCAccountItem) => isSuspended(item.status)).length;
-    const totalUniqueDomains = new Set(dropdownFilteredData.map(item => item.domain.trim().toLowerCase())).size;
-
-    const totalCost = dropdownFilteredData.reduce((sum, item) => {
-      const costStr = (item.cost || "0").replace(/,/g, "."); // Biến "1,18" thành "1.18"
-      const costNum = parseFloat(costStr.replace(/[^0-9.]/g, ""));
-      return sum + (isNaN(costNum) ? 0 : costNum);
-    }, 0);
+    const totalUniqueDomains = new Set(dropdownFilteredData.map(item => item.domain?.trim().toLowerCase())).size;
+    const totalCost = dropdownFilteredData.reduce((sum, item) => sum + parseCost(item.cost), 0);
 
     return { total, live, sus, totalCost, totalUniqueDomains };
   }, [dropdownFilteredData]);
 
   const pieChartStats = useMemo(() => [
-    { name: "Active", value: dynamicStats.live, color: "#10b981" },
-    { name: "Suspended", value: dynamicStats.sus, color: "#ef4444" }
-  ], [dynamicStats]);
+    { name: t("active"), value: dynamicStats.live, color: "#10b981" },
+    { name: t("beforeSuspended"), value: dynamicStats.sus, color: "#ef4444" }
+  ], [dynamicStats, t]);
 
   const devProductivityStats = useMemo(() => {
     const statsMap: Record<string, { name: string; live: number; sus: number; total: number }> = {};
@@ -171,8 +166,8 @@ function DevDashboard() {
     const monthsSet = new Set<string>();
     rawGmcData.forEach(item => {
       if (item.dateGMC && item.dateGMC !== "—") {
-        const [_, month, year] = item.dateGMC.split("/");
-        monthsSet.add(`${month}/${year}`);
+        const [, month, year] = item.dateGMC.split("/");
+        if (month && year) monthsSet.add(`${month}/${year}`);
       }
     });
     return Array.from(monthsSet).sort((a, b) => {
@@ -194,7 +189,7 @@ function DevDashboard() {
   }, [finalFilteredTableData, currentPage]);
 
   if (isLoading) {
-    return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">Loading system data...</div>;
+    return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">{t("loadingSystemData")}</div>;
   }
 
   return (
@@ -204,8 +199,8 @@ function DevDashboard() {
         {/* DASHBOARD TITLE */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
           <div className="space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">GMC Resistance Dashboard</h1>
-            <p className="text-slate-500 font-medium text-sm">Track and manage GMC status.</p>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">{t("devRegManagement")}</h1>
+            <p className="text-slate-500 font-medium text-sm">{t("gmcSystemDesc")}</p>
           </div>
         </div>
 
@@ -213,23 +208,23 @@ function DevDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
             <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Domains</p>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("totalFilteredRows")}</p>
               <h2 className="text-2xl font-black text-slate-900 mt-1">{dynamicStats.total}</h2>
             </div>
-            <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">All domains: {globalStats.totalAcc}</p>
+            <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">{t("allFilteredRecords")}: {globalStats.totalAcc}</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-indigo-500 border-t-2">
             <div>
-              <p className="text-[9px] font-black uppercase text-indigo-500 tracking-[0.15em]">Filtered Domains</p>
+              <p className="text-[9px] font-black uppercase text-indigo-500 tracking-[0.15em]">{t("actualFilteredDomains")}</p>
               <h2 className="text-2xl font-black text-indigo-600 mt-1">{dynamicStats.totalUniqueDomains}</h2>
             </div>
-            <p className="text-[9px] font-bold text-indigo-400 uppercase mt-3">Cleaned data: {globalStats.totalDomains}</p>
+            <p className="text-[9px] font-bold text-indigo-400 uppercase mt-3">{t("cleanedDomains")}: {globalStats.totalDomains}</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-emerald-500 border-t-2">
             <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Live Domains</p>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("totalLiveDomains")}</p>
               <div className="flex items-baseline gap-2 mt-1">
                 <h2 className="text-2xl font-black text-emerald-600">{dynamicStats.live}</h2>
                 <span className="text-[10px] font-bold text-emerald-500/70">
@@ -239,14 +234,14 @@ function DevDashboard() {
             </div>
             <div className="mt-3 flex items-center justify-between text-[9px] font-bold text-slate-400">
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Active Total: {globalStats.totalLive}
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> {t("searchTotal")}: {globalStats.totalLive}
               </span>
             </div>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-red-500 border-t-2">
             <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Suspended Domains</p>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("totalSuspendedDomains")}</p>
               <div className="flex items-baseline gap-2 mt-1">
                 <h2 className="text-2xl font-black text-red-600">{dynamicStats.sus}</h2>
                 <span className="text-[10px] font-bold text-red-500/70">
@@ -254,18 +249,18 @@ function DevDashboard() {
                 </span>
               </div>
             </div>
-            <p className="text-[9px] font-bold text-red-400 uppercase mt-3">Suspended Total: {globalStats.totalSus}</p>
+            <p className="text-[9px] font-bold text-red-400 uppercase mt-3">{t("searchTotal")}: {globalStats.totalSus}</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-blue-500 border-t-2">
             <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Ads Cost</p>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("searchAdsCost")}</p>
               <h2 className="text-2xl font-black text-blue-600 mt-1">
                 ${dynamicStats.totalCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
               </h2>
             </div>
             <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-3 bg-blue-50 w-max px-2 py-0.5 rounded-md">
-              Base: ${globalStats.totalCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+              {t("usdTotal")}: ${globalStats.totalCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
             </p>
           </div>
         </div>
@@ -273,7 +268,7 @@ function DevDashboard() {
         {/* CHARTS BLOCK */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">System Ratio Overview</h3>
+            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("systemRatioOverview")}</h3>
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -287,13 +282,13 @@ function DevDashboard() {
               </ResponsiveContainer>
             </div>
             <div className="flex justify-around mt-4 text-[10px] font-bold uppercase">
-              <div className="flex items-center gap-2 text-emerald-600">● Active: {dynamicStats.live}</div>
-              <div className="flex items-center gap-2 text-red-500">● Suspended: {dynamicStats.sus}</div>
+              <div className="flex items-center gap-2 text-emerald-600">● {t("active")}: {dynamicStats.live}</div>
+              <div className="flex items-center gap-2 text-red-500">● {t("beforeSuspended")}: {dynamicStats.sus}</div>
             </div>
           </div>
 
           <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Account Productivity by Dev</h3>
+            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("accountProductivityByDev")}</h3>
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={devProductivityStats}>
@@ -301,8 +296,8 @@ function DevDashboard() {
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
                   <YAxis hide />
                   <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                  <Bar dataKey="live" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} name="Active" />
-                  <Bar dataKey="sus" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} name="Suspended" />
+                  <Bar dataKey="live" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} name={t("active")} />
+                  <Bar dataKey="sus" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} name={t("beforeSuspended")} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -313,7 +308,7 @@ function DevDashboard() {
         <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-col sm:flex-row flex-wrap gap-3 shadow-sm">
           <input
             type="text"
-            placeholder="Search for domain..."
+            placeholder={t("searchDomainPlaceholder")}
             className="flex-1 px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl border border-transparent focus:border-blue-100 transition-all"
             value={searchDomain}
             onChange={(e) => { setSearchDomain(e.target.value); setCurrentPage(1); }}
@@ -323,9 +318,9 @@ function DevDashboard() {
             value={monthFilter}
             onChange={(e) => { setMonthFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">📅 ALL MONTHS</option>
+            <option value="all">{t("allMonths")}</option>
             {uniqueMonthsOptions.map(monthStr => (
-              <option key={monthStr} value={monthStr}>MONTH {monthStr}</option>
+              <option key={monthStr} value={monthStr}>{t("monthLabel")} {monthStr}</option>
             ))}
           </select>
           <select
@@ -333,7 +328,7 @@ function DevDashboard() {
             value={devFilter}
             onChange={(e) => { setDevFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">👤 FILTER BY DEV (ALL)</option>
+            <option value="all">{t("filterByDevAll")}</option>
             {uniqueDevsOptions.map(name => <option key={name} value={name}>{name.toUpperCase()}</option>)}
           </select>
           <select
@@ -341,9 +336,9 @@ function DevDashboard() {
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">STATUS</option>
-            <option value="live">🟢 ACTIVE</option>
-            <option value="sus">🔴 SUSPENDED</option>
+            <option value="all">{t("status")}</option>
+            <option value="live">🟢 {t("active").toUpperCase()}</option>
+            <option value="sus">🔴 {t("beforeSuspended").toUpperCase()}</option>
           </select>
         </div>
 
@@ -353,17 +348,16 @@ function DevDashboard() {
             <table className="w-full text-left table-fixed min-w-[1000px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  <th className="p-5 w-[35%]">Website / Domain</th>
-                  <th className="p-5 w-[15%]">Assigned Staff</th>
-                  <th className="p-5 w-[15%]">Status</th>
-                  <th className="p-5 w-[12%]">Days Alive</th>
-                  <th className="p-5 w-[13%]">Proxy Expiry Left</th>
-                  <th className="p-5 w-[10%]">Ads Cost</th>
+                  <th className="p-5 w-[35%]">{t("webAndPlatform")}</th>
+                  <th className="p-5 w-[15%]">{t("assignedStaff")}</th>
+                  <th className="p-5 w-[15%]">{t("status")}</th>
+                  <th className="p-5 w-[12%]">{t("daysAlive")}</th>
+                  <th className="p-5 w-[13%]">{t("proxyExpiryLeft")}</th>
+                  <th className="p-5 w-[10%]">{t("adsCost")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {paginatedTableData.map((item: GMCAccountItem, idx: number) => {
-                  // 🌟 ĐÃ CẬP NHẬT: Thay đổi hàm tính toán đồng nhất
                   const daysAlive = calculateDaysAlive(item.dateGMC);
                   const proxyDaysLeft = item.proxyExpiry !== "—" ? Number(item.proxyExpiry) : null;
                   const isDuplicateDomain = item.domain ? globalDomainFrequencyMap[item.domain.toLowerCase().trim()] > 1 : false;
@@ -382,11 +376,11 @@ function DevDashboard() {
                           <div className="font-bold text-slate-800 text-[14px] lowercase truncate">{item.domain || "N/A"}</div>
                           {isDuplicateDomain && (
                             <span className="text-[8px] font-black bg-amber-500 text-white px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 animate-pulse">
-                              RE-REG / CONFLICT
+                              CONFLICT
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-slate-400 font-bold mt-0.5">Created: {item.dateGMC}</div>
+                        <div className="text-[10px] text-slate-400 font-bold mt-0.5">{t("gmcDate")}: {item.dateGMC}</div>
                       </td>
 
                       <td className="p-5">
@@ -398,19 +392,18 @@ function DevDashboard() {
                       <td className="p-5">
                         <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase ${itemIsSus ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-500"}`}>
                           <span className={`w-1 h-1 rounded-full ${itemIsSus ? "bg-red-500" : "bg-emerald-500"} `} />
-                          {itemIsSus ? "Suspended" : "Active"}
+                          {itemIsSus ? t("beforeSuspended") : t("active")}
                         </div>
                       </td>
 
-                      {/* 🌟 ĐÃ CẬP NHẬT: Layout và cấu trúc hiển thị cột Days Alive chuẩn xác */}
                       <td className="p-5">
                         {daysAlive !== null ? (
                           <div className="flex flex-col">
                             <span className={`text-xs font-black ${itemIsSus ? "text-slate-400" : "text-emerald-600"}`}>
-                              {daysAlive} {daysAlive === 1 ? "day" : "days"}
+                              {daysAlive} {daysAlive === 1 ? t("day") : t("days")}
                             </span>
                             <span className="text-[9px] text-slate-400 font-medium">
-                              {itemIsSus ? "Before suspended" : "Running"}
+                              {itemIsSus ? t("beforeSuspended") : t("running")}
                             </span>
                           </div>
                         ) : (
@@ -422,7 +415,7 @@ function DevDashboard() {
                         {proxyDaysLeft !== null && !isNaN(proxyDaysLeft) ? (
                           <div className="flex flex-col gap-1">
                             <div className={`text-[11px] font-black ${proxyDaysLeft < 3 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
-                              {proxyDaysLeft > 0 ? `${proxyDaysLeft} days left` : 'Expired'}
+                              {proxyDaysLeft > 0 ? `${proxyDaysLeft} ${t("daysLeft")}` : t("expired")}
                             </div>
                           </div>
                         ) : (
@@ -439,7 +432,7 @@ function DevDashboard() {
                 {paginatedTableData.length === 0 && (
                   <tr>
                     <td colSpan={6} className="text-center p-14 text-sm font-medium text-slate-400">
-                      No account data found matching the filter.
+                      {t("noAccountData")}
                     </td>
                   </tr>
                 )}
@@ -447,7 +440,6 @@ function DevDashboard() {
             </table>
           </div>
 
-          {/* PAGINATION BAR */}
           <Pagination
             currentPage={currentPage}
             totalItems={finalFilteredTableData.length}

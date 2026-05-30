@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import { getDomainSheetData, DomainRecord, ExpenseRecord } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
+import { useTranslation } from "react-i18next";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, PieChart, Pie
@@ -106,6 +107,7 @@ function DomainManagerPage() {
   const [domStatus, setDomStatus] = useState("all");
   const [domExpiry, setDomExpiry] = useState("all"); // all | critical | warning | ok
   const [domPage, setDomPage] = useState(1);
+  const { t } = useTranslation();
 
   // Expense tab filters
   const [expSearch, setExpSearch] = useState("");
@@ -113,6 +115,8 @@ function DomainManagerPage() {
   const [expLoai, setExpLoai] = useState("all");
   const [expReg, setExpReg] = useState("all");
   const [expPage, setExpPage] = useState(1);
+
+
 
   const load = async (force = false) => {
     try {
@@ -275,42 +279,61 @@ function DomainManagerPage() {
         {/* ── Header ── */}
         <div className="flex flex-col md:flex-row justify-between items-end gap-4">
           <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Domain Manager</h1>
-            <p className="text-slate-500 font-medium text-sm">Track domain expiry &amp; all expense records.</p>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("domainManager")}</h1>
+            <p className="text-slate-500 font-medium text-sm">{t("domainManagerDesc")}</p>
           </div>
           <div className="flex items-center gap-3">
-            <TabBtn active={activeTab === "domains"} onClick={() => setActiveTab("domains")}>🌐 Domains</TabBtn>
-            <TabBtn active={activeTab === "expenses"} onClick={() => setActiveTab("expenses")}>💰 Expenses</TabBtn>
-
+            <TabBtn active={activeTab === "domains"} onClick={() => setActiveTab("domains")}>
+              🌐 {t("domains")}
+            </TabBtn>
+            <TabBtn active={activeTab === "expenses"} onClick={() => setActiveTab("expenses")}>
+              💰 {t("expenses")}
+            </TabBtn>
           </div>
         </div>
 
         {/* ════════════════════════════════════════════════════════════
-                    TAB 1 — DOMAINS
-                ════════════════════════════════════════════════════════════ */}
+          TAB 1 — DOMAINS
+          ════════════════════════════════════════════════════════════ */}
         {activeTab === "domains" && (
           <>
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-              <StatCard label="Total Domains" value={domStats.total} sub="In current filter" />
-              <StatCard label="Active" value={domStats.active}
-                colorClass="text-emerald-600" accentClass="border-t-emerald-500 border-t-2"
-                sub={`${domStats.total > 0 ? ((domStats.active / domStats.total) * 100).toFixed(1) : 0}% of total`} />
-              <StatCard label="⚠ Expiring ≤ 30d" value={domStats.critical}
-                colorClass="text-red-600" accentClass="border-t-red-500 border-t-2"
-                sub="Renew immediately" />
-              <StatCard label="Expiring 31–90d" value={domStats.warning}
-                colorClass="text-amber-600" accentClass="border-t-amber-500 border-t-2"
-                sub="Plan renewal soon" />
-              <StatCard label="Total Domain Cost" value={fmtUSD(domStats.totalCost)}
-                colorClass="text-indigo-600" accentClass="border-t-indigo-500 border-t-2"
-                sub="Filtered total" />
+              <StatCard label={t("totalDomains")} value={domStats.total} sub={t("inCurrentFilter")} />
+              <StatCard
+                label={t("active")}
+                value={domStats.active}
+                colorClass="text-emerald-600"
+                accentClass="border-t-emerald-500 border-t-2"
+                sub={`${domStats.total > 0 ? ((domStats.active / domStats.total) * 100).toFixed(1) : 0}% ${t("ofTotal")}`}
+              />
+              <StatCard
+                label={`⚠ ${t("expiringLessThan30d")}`}
+                value={domStats.critical}
+                colorClass="text-red-600"
+                accentClass="border-t-red-500 border-t-2"
+                sub={t("renewImmediately")}
+              />
+              <StatCard
+                label={t("expiring31To90d")}
+                value={domStats.warning}
+                colorClass="text-amber-600"
+                accentClass="border-t-amber-500 border-t-2"
+                sub={t("planRenewalSoon")}
+              />
+              <StatCard
+                label={t("totalDomainCost")}
+                value={fmtUSD(domStats.totalCost)}
+                colorClass="text-indigo-600"
+                accentClass="border-t-indigo-500 border-t-2"
+                sub={t("filteredTotal")}
+              />
             </div>
 
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Expiry Distribution</h3>
+                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("expiryDistribution")}</h3>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -325,14 +348,15 @@ function DomainManagerPage() {
                   {domExpiryChart.map(d => (
                     <div key={d.name} className="flex items-center gap-2 text-[10px] font-bold" style={{ color: d.color }}>
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
-                      {d.name}: {d.value}
+                      {/* Có thể bọc hàm t() bên ngoài nếu d.name là key tĩnh, hoặc giữ nguyên nếu d.name map từ API */}
+                      {t(d.name)}: {d.value}
                     </div>
                   ))}
                 </div>
               </div>
 
               <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Domains by Registrant</h3>
+                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("domainsByRegistrant")}</h3>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={regBarData}>
@@ -341,7 +365,7 @@ function DomainManagerPage() {
                       <YAxis hide />
                       <Tooltip
                         contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}
-                        formatter={(v: number) => [v, "Domains"]}
+                        formatter={(v) => [v, t("domains")]}
                       />
                       <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={32} fill="#6366f1" />
                     </BarChart>
@@ -352,52 +376,63 @@ function DomainManagerPage() {
 
             {/* Filters */}
             <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-3 shadow-sm">
-              <input type="text" placeholder="Search domain..."
+              <input
+                type="text"
+                placeholder={t("searchDomainPlaceholder")}
                 className="flex-1 min-w-[180px] px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl border border-transparent focus:border-blue-100 transition-all"
-                value={domSearch} onChange={e => { setDomSearch(e.target.value); setDomPage(1); }} />
-              <select className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={domReg} onChange={e => { setDomReg(e.target.value); setDomPage(1); }}>
-                <option value="all">👤 ALL REGISTRANTS</option>
+                value={domSearch}
+                onChange={e => { setDomSearch(e.target.value); setDomPage(1); }}
+              />
+              <select
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
+                value={domReg}
+                onChange={e => { setDomReg(e.target.value); setDomPage(1); }}
+              >
+                <option value="all">👤 {t("allRegistrants")}</option>
                 {domRegOptions.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
               </select>
-              <select className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={domStatus} onChange={e => { setDomStatus(e.target.value); setDomPage(1); }}>
-                <option value="all">🔘 ALL STATUS</option>
+              <select
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
+                value={domStatus}
+                onChange={e => { setDomStatus(e.target.value); setDomPage(1); }}
+              >
+                <option value="all">🔘 {t("allStatus")}</option>
                 {domStatusOptions.map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}
               </select>
-              <select className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={domExpiry} onChange={e => { setDomExpiry(e.target.value); setDomPage(1); }}>
-                <option value="all">📅 ALL EXPIRY</option>
-                <option value="critical">🔴 ≤ 30 DAYS</option>
-                <option value="warning">🟡 31–90 DAYS</option>
-                <option value="ok">🟢 &gt; 90 DAYS</option>
+              <select
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
+                value={domExpiry}
+                onChange={e => { setDomExpiry(e.target.value); setDomPage(1); }}
+              >
+                <option value="all">📅 {t("allExpiry")}</option>
+                <option value="critical">🔴 ≤ 30 {t("days").toUpperCase()}</option>
+                <option value="warning">🟡 31–90 {t("days").toUpperCase()}</option>
+                <option value="ok">🟢 &gt; 90 {t("days").toUpperCase()}</option>
               </select>
               {(domSearch || domReg !== "all" || domStatus !== "all" || domExpiry !== "all") && (
-                <button onClick={() => { setDomSearch(""); setDomReg("all"); setDomStatus("all"); setDomExpiry("all"); setDomPage(1); }}
-                  className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors">
-                  ✕ Clear
+                <button
+                  onClick={() => { setDomSearch(""); setDomReg("all"); setDomStatus("all"); setDomExpiry("all"); setDomPage(1); }}
+                  className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+                >
+                  ✕ {t("clear")}
                 </button>
               )}
             </div>
 
-
             {/* Domain Table */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-              {/* 🟢 BƯỚC 1: Bọc container này để kích hoạt vuốt ngang trên điện thoại */}
               <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-
-                {/* 🟢 BƯỚC 2: Thêm min-w-[1000px] để bảng luôn giữ form đẹp khi thu nhỏ màn hình */}
                 <table className="w-full text-left table-fixed min-w-[1000px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
                       <th className="p-4 w-[5%]">#</th>
-                      <th className="p-4 w-[12%]">Registrant</th>
-                      <th className="p-4 w-[25%]">Domain</th>
-                      <th className="p-4 w-[12%]">Purchase Date</th>
-                      <th className="p-4 w-[13%]">Expiry Date</th>
-                      <th className="p-4 w-[9%] text-center">Days Left</th>
-                      <th className="p-4 w-[9%] text-right">Price</th>
-                      <th className="p-4 w-[10%]">Tool Status</th>
+                      <th className="p-4 w-[12%]">{t("thRegistrant")}</th>
+                      <th className="p-4 w-[25%]">{t("thDomain")}</th>
+                      <th className="p-4 w-[12%]">{t("thPurchaseDate")}</th>
+                      <th className="p-4 w-[13%]">{t("thExpiryDate")}</th>
+                      <th className="p-4 w-[9%] text-center">{t("thDaysLeft")}</th>
+                      <th className="p-4 w-[9%] text-right">{t("thPrice")}</th>
+                      <th className="p-4 w-[10%]">{t("thToolStatus")}</th>
                       <th className="p-4 w-[5%] text-center">⚠</th>
                     </tr>
                   </thead>
@@ -414,8 +449,12 @@ function DomainManagerPage() {
                             </span>
                           </td>
                           <td className="p-4">
-                            <a href={`https://${d.domain}`} target="_blank" rel="noreferrer"
-                              className="font-bold text-slate-800 text-sm lowercase hover:text-indigo-600 transition-colors truncate block">
+                            <a
+                              href={`https://${d.domain}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-bold text-slate-800 text-sm lowercase hover:text-indigo-600 transition-colors truncate block"
+                            >
                               {d.domain}
                             </a>
                           </td>
@@ -436,9 +475,7 @@ function DomainManagerPage() {
                             </span>
                           </td>
                           <td className="p-4">
-                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${d.trangThai?.toLowerCase() === "active"
-                              ? "bg-emerald-50 text-emerald-600"
-                              : "bg-slate-100 text-slate-500"
+                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${d.trangThai?.toLowerCase() === "active" ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
                               }`}>
                               <span className={`w-1 h-1 rounded-full ${d.trangThai?.toLowerCase() === "active" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
                               {d.trangThai || "—"}
@@ -446,22 +483,21 @@ function DomainManagerPage() {
                           </td>
                           <td className="p-4 text-center">
                             {isExpiring ? (
-                              <span className="text-[9px] font-black bg-red-500 text-white px-2 py-0.5 rounded-full uppercase animate-pulse">URGENT</span>
+                              <span className="text-[9px] font-black bg-red-500 text-white px-2 py-0.5 rounded-full uppercase animate-pulse">{t("statusUrgent")}</span>
                             ) : isWarning ? (
-                              <span className="text-[9px] font-black bg-amber-400 text-white px-2 py-0.5 rounded-full uppercase">SOON</span>
+                              <span className="text-[9px] font-black bg-amber-400 text-white px-2 py-0.5 rounded-full uppercase">{t("statusSoon")}</span>
                             ) : (
-                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full uppercase">OK</span>
+                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full uppercase">{t("statusOk")}</span>
                             )}
                           </td>
                         </tr>
                       );
                     })}
 
-                    {/* 🟢 Đã dọn dẹp comment lỗi ở đây để đưa cấu trúc JSX về chuẩn */}
                     {domPaginated.length === 0 && (
                       <tr>
                         <td colSpan={9} className="text-center p-14 text-sm font-medium text-slate-400">
-                          No domains found.
+                          {t("noDomainsFound")}
                         </td>
                       </tr>
                     )}
@@ -469,26 +505,23 @@ function DomainManagerPage() {
                 </table>
               </div>
 
-              {/* Thanh phân trang nằm ngoài vùng cuộn để luôn cố định dễ nhìn */}
               <Pagination currentPage={domPage} totalItems={domSorted.length} itemsPerPage={ITEMS} onPageChange={setDomPage} />
             </div>
           </>
         )}
 
         {/* ════════════════════════════════════════════════════════════
-                    TAB 2 — EXPENSES
-                ════════════════════════════════════════════════════════════ */}
+          TAB 2 — EXPENSES
+          ════════════════════════════════════════════════════════════ */}
         {activeTab === "expenses" && (
           <>
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+              <StatCard label={t("totalRecords")} value={expStats.count} sub={t("inCurrentFilter")} />
 
-              {/* Total records */}
-              <StatCard label="Total Records" value={expStats.count} sub="In current filter" />
-
-              {/* Combined spend card — USD + VND together */}
+              {/* Combined spend card — USD + VND + USDT */}
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-emerald-500 border-t-2 sm:col-span-2 md:col-span-1">
-                <p className="text-[9px] font-black uppercase text-emerald-500 tracking-[0.15em]">Total Spend</p>
+                <p className="text-[9px] font-black uppercase text-emerald-500 tracking-[0.15em]">{t("totalSpend")}</p>
                 <div className="mt-1 flex flex-col gap-1">
                   <div className="flex items-baseline gap-1.5">
                     <span className="text-2xl font-black text-emerald-600">{fmtUSD(expStats.totalUSD)}</span>
@@ -511,34 +544,38 @@ function DomainManagerPage() {
                     </div>
                   )}
                 </div>
-                <p className="text-[9px] font-bold text-slate-300 uppercase mt-2">All expense types</p>
+                <p className="text-[9px] font-black text-slate-300 uppercase mt-2">{t("allExpenseTypes")}</p>
               </div>
 
-              {/* ADS spend */}
-              <StatCard label="ADS Spend"
-                value={fmtUSD(expStats.byType["Chi phí ADS"] ?? 0)}
-                colorClass="text-purple-600" accentClass="border-t-purple-500 border-t-2"
-                sub="Advertising cost" />
-
-              {/* Domain spend */}
-              <StatCard label="Domain Spend"
-                value={fmtUSD(expStats.byType["Mua domain"] ?? 0)}
-                colorClass="text-blue-600" accentClass="border-t-blue-500 border-t-2"
-                sub="Domain purchases" />
-
-              {/* Top spender */}
               <StatCard
-                label={topSpender ? "Top Spender" : "GMC + Mail"}
-                value={topSpender ? topSpender.name : fmtUSD((expStats.byType["Đăng ký GMC"] ?? 0) + (expStats.byType["Mua mail"] ?? 0))}
-                colorClass="text-indigo-600" accentClass="border-t-indigo-500 border-t-2"
-                sub={topSpender ? fmtUSD(topSpender.total) : "Other costs"} />
+                label={t("adsSpend")}
+                value={fmtUSD(expStats.byType["Chi phí ADS"] ?? 0)}
+                colorClass="text-purple-600"
+                accentClass="border-t-purple-500 border-t-2"
+                sub={t("advertisingCost")}
+              />
 
+              <StatCard
+                label={t("domainSpend")}
+                value={fmtUSD(expStats.byType["Mua domain"] ?? 0)}
+                colorClass="text-blue-600"
+                accentClass="border-t-blue-500 border-t-2"
+                sub={t("domainPurchases")}
+              />
+
+              <StatCard
+                label={topSpender ? t("topSpender") : t("gmcAndMail")}
+                value={topSpender ? topSpender.name : fmtUSD((expStats.byType["Đăng ký GMC"] ?? 0) + (expStats.byType["Mua mail"] ?? 0))}
+                colorClass="text-indigo-600"
+                accentClass="border-t-indigo-500 border-t-2"
+                sub={topSpender ? fmtUSD(topSpender.total) : t("otherCosts")}
+              />
             </div>
 
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Spend by Category</h3>
+                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("spendByCategory")}</h3>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -557,7 +594,7 @@ function DomainManagerPage() {
                     <div key={d.name} className="flex items-center justify-between text-[10px] font-bold" style={{ color: d.color }}>
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
-                        {d.name}
+                        {t(d.name)}
                       </div>
                       <span>{fmtUSD(d.value)}</span>
                     </div>
@@ -566,7 +603,7 @@ function DomainManagerPage() {
               </div>
 
               <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Monthly Spend</h3>
+                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("monthlySpend")}</h3>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={expMonthlyBar}>
@@ -575,7 +612,7 @@ function DomainManagerPage() {
                       <YAxis hide />
                       <Tooltip
                         contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}
-                        formatter={(v: number) => [fmtUSD(v), "Total spend"]}
+                        formatter={(v: number) => [fmtUSD(v), t("totalSpend")]}
                       />
                       <Bar dataKey="total" radius={[4, 4, 0, 0]} barSize={28} fill="#a855f7" />
                     </BarChart>
@@ -586,49 +623,60 @@ function DomainManagerPage() {
 
             {/* Filters */}
             <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-3 shadow-sm">
-              <input type="text" placeholder="Search web, registrant, card..."
+              <input
+                type="text"
+                placeholder={t("searchExpensePlaceholder")}
                 className="flex-1 min-w-[200px] px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl border border-transparent focus:border-blue-100 transition-all"
-                value={expSearch} onChange={e => { setExpSearch(e.target.value); setExpPage(1); }} />
-              <select className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={expMonth} onChange={e => { setExpMonth(e.target.value); setExpPage(1); }}>
-                <option value="all">📅 ALL MONTHS</option>
+                value={expSearch}
+                onChange={e => { setExpSearch(e.target.value); setExpPage(1); }}
+              />
+              <select
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
+                value={expMonth}
+                onChange={e => { setExpMonth(e.target.value); setExpPage(1); }}
+              >
+                <option value="all">📅 {t("allMonths")}</option>
                 {expMonthOptions.map(m => <option key={m} value={m}>{fmtMonth(m).toUpperCase()}</option>)}
               </select>
-              <select className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={expLoai} onChange={e => { setExpLoai(e.target.value); setExpPage(1); }}>
-                <option value="all">💰 ALL TYPES</option>
+              <select
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
+                value={expLoai}
+                onChange={e => { setExpLoai(e.target.value); setExpPage(1); }}
+              >
+                <option value="all">💰 {t("allTypes")}</option>
                 {expLoaiOptions.map(l => <option key={l} value={l}>{l.toUpperCase()}</option>)}
               </select>
-              <select className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={expReg} onChange={e => { setExpReg(e.target.value); setExpPage(1); }}>
-                <option value="all">👤 ALL REGISTRANTS</option>
+              <select
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
+                value={expReg}
+                onChange={e => { setExpReg(e.target.value); setExpPage(1); }}
+              >
+                <option value="all">👤 {t("allRegistrants")}</option>
                 {expRegOptions.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
               </select>
               {(expSearch || expMonth !== "all" || expLoai !== "all" || expReg !== "all") && (
-                <button onClick={() => { setExpSearch(""); setExpMonth("all"); setExpLoai("all"); setExpReg("all"); setExpPage(1); }}
-                  className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors">
-                  ✕ Clear
+                <button
+                  onClick={() => { setExpSearch(""); setExpMonth("all"); setExpLoai("all"); setExpReg("all"); setExpPage(1); }}
+                  className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+                >
+                  ✕ {t("clear")}
                 </button>
               )}
             </div>
 
             {/* Expense Table */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-
-              {/* 🟢 BƯỚC 1: Bọc container này để kích hoạt vuốt ngang trên điện thoại */}
               <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-
-                {/* 🟢 BƯỚC 2: Thêm min-w-[1000px] để các cột dữ liệu không bị dính vào nhau khi thu nhỏ màn hình */}
                 <table className="w-full text-left table-fixed min-w-[1000px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <th className="p-4 w-[12%]">Registrant</th>
-                      <th className="p-4 w-[14%]">Type</th>
-                      <th className="p-4 w-[12%]">Date</th>
-                      <th className="p-4 w-[20%]">Website</th>
-                      <th className="p-4 w-[16%]">Ads Card</th>
-                      <th className="p-4 w-[10%] text-right">Amount</th>
-                      <th className="p-4 w-[16%]">Bill</th>
+                      <th className="p-4 w-[12%]">{t("thRegistrant")}</th>
+                      <th className="p-4 w-[14%]">{t("thType")}</th>
+                      <th className="p-4 w-[12%]">{t("thDate")}</th>
+                      <th className="p-4 w-[20%]">{t("thWebsite")}</th>
+                      <th className="p-4 w-[16%]">{t("thAdsCard")}</th>
+                      <th className="p-4 w-[10%] text-right">{t("thAmount")}</th>
+                      <th className="p-4 w-[16%]">{t("thBill")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -642,8 +690,10 @@ function DomainManagerPage() {
                             </span>
                           </td>
                           <td className="p-4">
-                            <span className="text-[10px] font-black px-2.5 py-1 rounded-full uppercase"
-                              style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
+                            <span
+                              className="text-[10px] font-black px-2.5 py-1 rounded-full uppercase"
+                              style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}
+                            >
                               {e.loaiChiPhi}
                             </span>
                           </td>
@@ -660,24 +710,19 @@ function DomainManagerPage() {
                               {e.tenTheAds || "—"}
                             </span>
                           </td>
-
                           <td className="p-4 text-right">
                             <span className="text-sm font-black text-slate-900">
-                              {/* 1. Nếu là USDT */}
                               {e.chiPhiUSDT > 0 ? (
                                 <span className="text-[11px] font-black text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-200">
                                   {e.chiPhiUSDT} USDT
                                 </span>
-                              ) :
-                                /* 2. Nếu là VND (Có chữ k hoặc parse ra tiền VND) */
-                                /k$/i.test(e.chiPhiRaw) || e.chiPhiVND > 0 ? (
-                                  <span className="text-[11px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                                    {e.chiPhiVND > 0 ? `${e.chiPhiVND.toLocaleString("vi-VN")} VND` : e.chiPhiRaw}
-                                  </span>
-                                ) : (
-                                  /* 3. Ngược lại là USD */
-                                  fmtUSD(e.chiPhiUSD || parseFloat(e.chiPhiRaw.replace(/[^0-9.-]/g, "")) || 0)
-                                )}
+                              ) : /k$/i.test(e.chiPhiRaw) || e.chiPhiVND > 0 ? (
+                                <span className="text-[11px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                                  {e.chiPhiVND > 0 ? `${e.chiPhiVND.toLocaleString("vi-VN")} VND` : e.chiPhiRaw}
+                                </span>
+                              ) : (
+                                fmtUSD(e.chiPhiUSD || parseFloat(e.chiPhiRaw.replace(/[^0-9.-]/g, "")) || 0)
+                              )}
                             </span>
                           </td>
                           <td className="p-4">
@@ -696,7 +741,7 @@ function DomainManagerPage() {
                                       className="text-[10px] font-black text-blue-500 hover:text-blue-700 underline underline-offset-2 truncate block"
                                       title={cleanLink}
                                     >
-                                      {arr.length > 1 ? `View bill #${index + 1} ↗` : "View bill ↗"}
+                                      {arr.length > 1 ? `${t("viewBill")} #${index + 1} ↗` : `${t("viewBill")} ↗`}
                                     </a>
                                   ))}
                               </div>
@@ -710,7 +755,7 @@ function DomainManagerPage() {
                     {expPaginated.length === 0 && (
                       <tr>
                         <td colSpan={7} className="text-center p-14 text-sm font-medium text-slate-400">
-                          No expense records found.
+                          {t("noExpenseRecordsFound")}
                         </td>
                       </tr>
                     )}
@@ -718,7 +763,6 @@ function DomainManagerPage() {
                 </table>
               </div>
 
-              {/* Thanh phân trang nằm ngoài vùng cuộn để luôn cố định vị trí trực quan */}
               <Pagination currentPage={expPage} totalItems={expZoneB.length} itemsPerPage={ITEMS} onPageChange={setExpPage} />
             </div>
           </>

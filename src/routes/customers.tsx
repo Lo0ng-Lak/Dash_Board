@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next"; // 🌐 Import hook dịch thuật
 import { getGMCRegData } from "../lib/dataService";
 import { Pagination } from "../components/pagination";
 import {
@@ -26,6 +27,8 @@ export const Route = createFileRoute("/customers")({
 });
 
 function GMCPremiumDashboard() {
+  const { t } = useTranslation(); // 🌐 Gọi hook sử dụng đa ngôn ngữ
+
   // ==========================================
   // FILTERS & PAGINATION STATE MANAGEMENT
   // ==========================================
@@ -57,10 +60,9 @@ function GMCPremiumDashboard() {
     return s === "đã sus" || s === "suspended" || s === "sus";
   };
 
-  // 🌟 HELPER FUNCTION mới: Chuẩn hóa chuỗi tiền tệ từ "10,5" thành số thực 10.5
+  // Chuẩn hóa chuỗi tiền tệ từ "10,5" thành số thực 10.5
   const parseCost = (costStr: string | undefined): number => {
     if (!costStr) return 0;
-    // Thay thế dấu phẩy thành dấu chấm để chuẩn hóa số thập phân, loại bỏ khoảng trắng
     const normalized = costStr.replace(",", ".").trim();
     const parsed = parseFloat(normalized);
     return isNaN(parsed) ? 0 : parsed;
@@ -74,7 +76,6 @@ function GMCPremiumDashboard() {
       const gmcDate = new Date(year, month - 1, day);
       const today = new Date();
 
-      // Reset giờ về 0 để tính toán ngày chính xác
       gmcDate.setHours(0, 0, 0, 0);
       today.setHours(0, 0, 0, 0);
 
@@ -116,7 +117,6 @@ function GMCPremiumDashboard() {
     const total = dropdownFilteredData.length;
     const live = dropdownFilteredData.filter((item: GMCRegItem) => !isSuspended(item.status)).length;
     const sus = dropdownFilteredData.filter((item: GMCRegItem) => isSuspended(item.status)).length;
-    // 🌟 ĐÃ CẬP NHẬT: Dùng parseCost để cộng tổng tiền chính xác
     const totalCost = dropdownFilteredData.reduce((sum: number, item: GMCRegItem) => sum + parseCost(item.cost), 0);
     const totalUniqueDomains = new Set(dropdownFilteredData.map((item) => item.domain.toLowerCase().trim())).size;
 
@@ -125,9 +125,9 @@ function GMCPremiumDashboard() {
 
   // Structure data for pie chart
   const pieChartStats = useMemo(() => [
-    { name: "Active", value: dynamicStats.live, color: "#10b981" },
-    { name: "Suspended", value: dynamicStats.sus, color: "#ef4444" }
-  ], [dynamicStats]);
+    { name: t("active"), value: dynamicStats.live, color: "#10b981" },
+    { name: t("suspended"), value: dynamicStats.sus, color: "#ef4444" }
+  ], [dynamicStats, t]);
 
   // Structure data for bar chart productivity by Dev
   const devProductivityStats = useMemo(() => {
@@ -145,7 +145,6 @@ function GMCPremiumDashboard() {
       } else {
         statsMap[devName].live += 1;
       }
-      // 🌟 ĐÃ CẬP NHẬT: Dùng parseCost tại đây
       statsMap[devName].totalCost += parseCost(item.cost);
     });
     return Object.values(statsMap).sort((a, b) => b.total - a.total);
@@ -161,7 +160,6 @@ function GMCPremiumDashboard() {
   }, [dropdownFilteredData, searchDomain]);
 
   const searchStats = useMemo(() => {
-    // 🌟 ĐÃ CẬP NHẬT: Dùng parseCost cho logic tìm kiếm nhảy số
     const totalCost = finalFilteredTableData.reduce((sum: number, item: GMCRegItem) => sum + parseCost(item.cost), 0);
     const totalRows = finalFilteredTableData.length;
     return { totalCost, totalRows };
@@ -212,10 +210,9 @@ function GMCPremiumDashboard() {
   }, [finalFilteredTableData, currentPage]);
 
   if (isLoading) {
-    return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">Loading system data...</div>;
+    return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">{t("loadingSystemData")}</div>;
   }
 
-  // Chọn hiển thị số thập phân tối đa là 2 chữ số (ví dụ: 10.5 -> $10.5 hoặc 1,000.55)
   const formatOptions = { minimumFractionDigits: 0, maximumFractionDigits: 2 };
 
   return (
@@ -225,8 +222,8 @@ function GMCPremiumDashboard() {
         {/* DASHBOARD TITLE */}
         <div className="flex flex-col md:flex-row justify-between items-end gap-4">
           <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">GMC REG Management</h1>
-            <p className="text-slate-500 font-medium text-sm">Track and manage the status of GMC account initialization.</p>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("gmcRegManagement")}</h1>
+            <p className="text-slate-500 font-medium text-sm">{t("gmcSystemDesc")}</p>
           </div>
         </div>
 
@@ -234,29 +231,29 @@ function GMCPremiumDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
             <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Filtered Rows</p>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("totalFilteredRows")}</p>
               <h2 className="text-2xl font-black text-slate-900 mt-1">
                 {searchDomain ? `${searchStats.totalRows} / ` : ""}{dynamicStats.total}
               </h2>
             </div>
             <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">
-              {searchDomain ? "Matching search result" : "All filtered records"}
+              {searchDomain ? t("matchingSearchResult") : t("allFilteredRecords")}
             </p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-indigo-500 border-t-2">
             <div>
-              <p className="text-[9px] font-black uppercase text-indigo-500 tracking-[0.15em]">Actual Filtered Domains</p>
+              <p className="text-[9px] font-black uppercase text-indigo-500 tracking-[0.15em]">{t("actualFilteredDomains")}</p>
               <div className="flex items-baseline gap-1 mt-1">
                 <h2 className="text-2xl font-black text-indigo-600">{dynamicStats.totalUniqueDomains}</h2>
               </div>
             </div>
-            <p className="text-[9px] font-bold text-indigo-400 uppercase mt-3">Cleaned domains</p>
+            <p className="text-[9px] font-bold text-indigo-400 uppercase mt-3">{t("cleanedDomains")}</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-emerald-500 border-t-2">
             <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Live Domains</p>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("totalLiveDomains")}</p>
               <div className="flex items-baseline gap-2 mt-1">
                 <h2 className="text-2xl font-black text-emerald-600">{dynamicStats.live}</h2>
                 <span className="text-[10px] font-bold text-emerald-500/70">
@@ -266,13 +263,13 @@ function GMCPremiumDashboard() {
             </div>
             <div className="mt-3 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Active</p>
+              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">{t("active")}</p>
             </div>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-red-500 border-t-2">
             <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">Total Suspended Domains</p>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("totalSuspendedDomains")}</p>
               <div className="flex items-baseline gap-2 mt-1">
                 <h2 className="text-2xl font-black text-red-600">{dynamicStats.sus}</h2>
                 <span className="text-[10px] font-bold text-red-500/70">
@@ -280,21 +277,20 @@ function GMCPremiumDashboard() {
                 </span>
               </div>
             </div>
-            <p className="text-[9px] font-bold text-red-400 uppercase mt-3">Suspended</p>
+            <p className="text-[9px] font-bold text-red-400 uppercase mt-3">{t("suspended")}</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-blue-500 border-t-2">
             <div>
               <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">
-                {searchDomain ? "Search Ads Cost" : "Total Ads Cost"}
+                {searchDomain ? t("searchAdsCost") : t("totalAdsCost")}
               </p>
-              {/* 🌟 ĐÃ CẬP NHẬT: Thêm format hiển thị đúng số thập phân cho ô tổng tiền */}
               <h2 className="text-2xl font-black text-blue-600 mt-1">
                 ${(searchDomain ? searchStats.totalCost : dynamicStats.totalCost).toLocaleString('en-US', formatOptions)}
               </h2>
             </div>
             <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-3 bg-blue-50 w-max px-2 py-0.5 rounded-md">
-              {searchDomain ? "SEARCH TOTAL" : "USD TOTAL"}
+              {searchDomain ? t("searchTotal") : t("usdTotal")}
             </p>
           </div>
         </div>
@@ -302,7 +298,7 @@ function GMCPremiumDashboard() {
         {/* PIE CHART & BAR CHART BLOCK */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">System Ratio Overview</h3>
+            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("systemRatioOverview")}</h3>
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -316,13 +312,13 @@ function GMCPremiumDashboard() {
               </ResponsiveContainer>
             </div>
             <div className="flex justify-around mt-4 text-[10px] font-bold uppercase">
-              <div className="flex items-center gap-2 text-emerald-600">● Active: {dynamicStats.live}</div>
-              <div className="flex items-center gap-2 text-red-500">● Suspended: {dynamicStats.sus}</div>
+              <div className="flex items-center gap-2 text-emerald-600">● {t("active")}: {dynamicStats.live}</div>
+              <div className="flex items-center gap-2 text-red-500">● {t("suspended")}: {dynamicStats.sus}</div>
             </div>
           </div>
 
           <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">Account Productivity by Dev</h3>
+            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("accountProductivityByDev")}</h3>
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={devProductivityStats}>
@@ -330,8 +326,8 @@ function GMCPremiumDashboard() {
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
                   <YAxis hide />
                   <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                  <Bar dataKey="live" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} name="Active" />
-                  <Bar dataKey="sus" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} name="Suspended" />
+                  <Bar dataKey="live" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} name={t("active")} />
+                  <Bar dataKey="sus" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} name={t("suspended")} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -342,7 +338,7 @@ function GMCPremiumDashboard() {
         <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-3 shadow-sm">
           <input
             type="text"
-            placeholder="Search for domain..."
+            placeholder={t("searchDomainPlaceholder")}
             className="flex-1 px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl border border-transparent focus:border-blue-100 transition-all"
             value={searchDomain}
             onChange={(e) => { setSearchDomain(e.target.value); setCurrentPage(1); }}
@@ -353,9 +349,9 @@ function GMCPremiumDashboard() {
             value={monthFilter}
             onChange={(e) => { setMonthFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">📅 ALL MONTHS</option>
+            <option value="all">{t("allMonths")}</option>
             {uniqueMonthsOptions.map(monthStr => (
-              <option key={monthStr} value={monthStr}>MONTH {monthStr}</option>
+              <option key={monthStr} value={monthStr}>{t("monthLabel")} {monthStr}</option>
             ))}
           </select>
 
@@ -364,7 +360,7 @@ function GMCPremiumDashboard() {
             value={devFilter}
             onChange={(e) => { setDevFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">👤 FILTER BY DEV (ALL)</option>
+            <option value="all">{t("filterByDevAll")}</option>
             {uniqueDevsOptions.map(name => <option key={name} value={name}>{name.toUpperCase()}</option>)}
           </select>
 
@@ -373,7 +369,7 @@ function GMCPremiumDashboard() {
             value={webTypeFilter}
             onChange={(e) => { setWebTypeFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">🌐 WEB TYPE (ALL)</option>
+            <option value="all">{t("webTypeAll")}</option>
             {uniqueWebTypesOptions.map(type => <option key={type} value={type}>{type.toUpperCase()}</option>)}
           </select>
 
@@ -382,9 +378,9 @@ function GMCPremiumDashboard() {
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
           >
-            <option value="all">STATUS</option>
-            <option value="live">🟢 ACTIVE</option>
-            <option value="sus">🔴 SUSPENDED</option>
+            <option value="all">{t("status")}</option>
+            <option value="live">🟢 {t("active")}</option>
+            <option value="sus">🔴 {t("suspended")}</option>
           </select>
         </div>
 
@@ -395,13 +391,13 @@ function GMCPremiumDashboard() {
             <table className="w-full text-left table-fixed min-w-[1100px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  <th className="p-5 w-[30%]">Website & Platform</th>
-                  <th className="p-5 w-[13%]">Assigned Staff</th>
-                  <th className="p-5 w-[13%]">Status</th>
-                  <th className="p-5 w-[12%]">GMC Date</th>
-                  <th className="p-5 w-[12%]">Age (Days)</th>
-                  <th className="p-5 w-[12%]">Proxy Expiry Left</th>
-                  <th className="p-5 w-[10%]">Ads Cost</th>
+                  <th className="p-5 w-[30%]">{t("webAndPlatform")}</th>
+                  <th className="p-5 w-[13%]">{t("assignedStaff")}</th>
+                  <th className="p-5 w-[13%]">{t("status")}</th>
+                  <th className="p-5 w-[12%]">{t("gmcDate")}</th>
+                  <th className="p-5 w-[12%]">{t("ageDays")}</th>
+                  <th className="p-5 w-[12%]">{t("proxyExpiryLeft")}</th>
+                  <th className="p-5 w-[10%]">{t("adsCost")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -441,7 +437,7 @@ function GMCPremiumDashboard() {
                         <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase ${itemIsSus ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-500"
                           }`}>
                           <span className={`w-1 h-1 rounded-full ${itemIsSus ? "bg-red-500" : "bg-emerald-500"}`} />
-                          {itemIsSus ? "Suspended" : "Active"}
+                          {itemIsSus ? t("suspended") : t("active")}
                         </div>
                       </td>
 
@@ -453,10 +449,10 @@ function GMCPremiumDashboard() {
                         {daysAlive !== null ? (
                           <div className="flex flex-col">
                             <span className={`text-xs font-black ${itemIsSus ? "text-slate-400" : "text-emerald-600"}`}>
-                              {daysAlive} {daysAlive === 1 ? "day" : "days"}
+                              {daysAlive} {daysAlive === 1 ? t("day") : t("days")}
                             </span>
                             <span className="text-[9px] text-slate-400 font-medium">
-                              {itemIsSus ? "Before suspended" : "Running"}
+                              {itemIsSus ? t("beforeSuspended") : t("running")}
                             </span>
                           </div>
                         ) : (
@@ -468,7 +464,7 @@ function GMCPremiumDashboard() {
                         {proxyDaysLeft !== null && !isNaN(proxyDaysLeft) ? (
                           <div className="flex flex-col gap-1">
                             <div className={`text-[11px] font-black ${proxyDaysLeft < 3 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
-                              {proxyDaysLeft > 0 ? `${proxyDaysLeft} days left` : 'Expired'}
+                              {proxyDaysLeft > 0 ? `${proxyDaysLeft} ${t("daysLeft")}` : t("expired")}
                             </div>
                           </div>
                         ) : (
@@ -476,7 +472,6 @@ function GMCPremiumDashboard() {
                         )}
                       </td>
 
-                      {/* 🌟 ĐÃ CẬP NHẬT: Xử lý chuỗi "10,5" -> parse số chuẩn -> format dấu phẩy chuẩn US */}
                       <td className="p-5">
                         <div className="text-[15px] font-black text-slate-900">
                           ${parseCost(item.cost).toLocaleString('en-US', formatOptions)}
@@ -488,7 +483,7 @@ function GMCPremiumDashboard() {
                 {paginatedTableData.length === 0 && (
                   <tr>
                     <td colSpan={7} className="text-center p-10 text-sm font-medium text-slate-400">
-                      No account data found matching the filter.
+                      {t("noAccountData")}
                     </td>
                   </tr>
                 )}
