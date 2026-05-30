@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next"; // 🌐 Import thư viện dịch thuật
-import i18next from "i18next";
+import i18n from "../i18n";
 
 import appCss from "../styles.css?url";
 
@@ -132,14 +132,34 @@ function RootComponent() {
   // 📱 State điều khiển đóng/mở menu trên Mobile
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // 🌐 Sử dụng i18next điều khiển đổi ngôn ngữ thay cho useState thuần
-  const { t, i18n } = useTranslation();
-  const currentLang = i18n.language;
+  // 🌐 Sử dụng hook dịch thuật và đồng bộ với instance i18n đã khởi tạo
+  const { t } = useTranslation();
+  const [currentLang, setCurrentLang] = useState("en");
 
-  // Tự động đóng menu mobile mỗi khi chuyển trang
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedLang = localStorage.getItem("lang");
+    if (savedLang && savedLang !== i18n.language) {
+      i18n.changeLanguage(savedLang);
+    }
+    setCurrentLang(i18n.language || savedLang || "en");
+
+    const onLanguageChanged = (lng: string) => setCurrentLang(lng as "vi" | "en");
+    i18n.on("languageChanged", onLanguageChanged);
+    return () => {
+      i18n.off("languageChanged", onLanguageChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = currentLang;
+    }
+  }, [currentLang]);
 
   // Check authentication khi component mounts hoặc pathname thay đổi
   useEffect(() => {
@@ -165,13 +185,7 @@ function RootComponent() {
 
   // Hàm chuyển đổi ngôn ngữ an toàn và lưu vào bộ nhớ trình duyệt
   const changeLanguage = (lng: "vi" | "en") => {
-    // i18n.changeLanguage(lng); 👈 Bỏ dòng cũ này đi
-
-    if (i18next.changeLanguage) {
-      i18next.changeLanguage(lng); // 👈 Dùng i18next gốc để gọi trực tiếp
-    } else {
-      console.warn("i18next core is not loaded properly");
-    }
+    i18n.changeLanguage(lng);
 
     if (typeof window !== "undefined") {
       localStorage.setItem("lang", lng);
