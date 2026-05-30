@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next"; // 🌐 Import thư viện dịch thuật
+import i18next from "i18next";
 
 import appCss from "../styles.css?url";
 
@@ -164,7 +165,14 @@ function RootComponent() {
 
   // Hàm chuyển đổi ngôn ngữ an toàn và lưu vào bộ nhớ trình duyệt
   const changeLanguage = (lng: "vi" | "en") => {
-    i18n.changeLanguage(lng);
+    // i18n.changeLanguage(lng); 👈 Bỏ dòng cũ này đi
+
+    if (i18next.changeLanguage) {
+      i18next.changeLanguage(lng); // 👈 Dùng i18next gốc để gọi trực tiếp
+    } else {
+      console.warn("i18next core is not loaded properly");
+    }
+
     if (typeof window !== "undefined") {
       localStorage.setItem("lang", lng);
     }

@@ -223,9 +223,7 @@ function Profile() {
                                             }
                                         }}
                                     />
-                                    <div className="absolute bottom-3 text-xs font-bold uppercase tracking-[0.2em] text-white bg-black/80 px-3 py-1 rounded border border-white/10 z-10">
-                                        OPERATOR
-                                    </div>
+
                                 </div>
                             </motion.div>
                         </div>
