@@ -1,16 +1,23 @@
 import Papa from "papaparse";
+import { DEFAULT_SHEET_LINKS } from "./sheetConfig";
 
-const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD;
-const LINK_SHOPIFY = import.meta.env.VITE_LINK_TAB_SHOPIFY;
-const LINK_GMC_VE = import.meta.env.VITE_LINK_TAB_GMC_VE;
-const LINK_GMC_REG = import.meta.env.VITE_LINK_GMC_REG;
-const LINK_INVOICES_GMC = import.meta.env.VITE_LINK_INVOICES_GMC ?? "";
+const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD ?? DEFAULT_SHEET_LINKS.REBUILD;
+const LINK_SHOPIFY = import.meta.env.VITE_LINK_TAB_SHOPIFY ?? DEFAULT_SHEET_LINKS.SHOPIFY;
+const LINK_GMC_VE = import.meta.env.VITE_LINK_TAB_GMC_VE ?? DEFAULT_SHEET_LINKS.GMC_VE;
+const LINK_GMC_REG = import.meta.env.VITE_LINK_TAB_GMC_REG ?? DEFAULT_SHEET_LINKS.GMC_REG;
+const LINK_INVOICES_GMC = import.meta.env.VITE_LINK_INVOICES_GMC ?? DEFAULT_SHEET_LINKS.INVOICES;
+const LINK_INFO_BO = import.meta.env.VITE_LINK_TAB_INFO_BO ?? DEFAULT_SHEET_LINKS.INFO_BO;
 
 let cachedDataNew: DomainSheetData | null = null;
 let cachedData: any[] | null = null;
 let cachedAllData: any[] | null = null;
 let cachedGmcVeData: any[] | null = null;
 let cachedGmcRegData: any = null;
+let cachedInfoBoData: InfoBoSheetData | null = null;
+
+export const clearInfoBoCache = () => {
+    cachedInfoBoData = null;
+};
 
 
 export interface WebRecord {
@@ -35,45 +42,29 @@ export const getAllDataWeb = async (forceRefresh = false): Promise<WebRecord[]> 
             cache: "no-store"
         }).then(r => r.text());
 
-        // Manual parse — split line then split columns by TAB
-        // Don't use PapaParse because it swallows line when encountering " in Address
-        const lines = resRebuild.split('\n');
-
-        const headers = lines[0].split('\t').map(h =>
-            h.replace(/[\u00A0\uFEFF\u200B\r]/g, '').trim()
-        );
-
-        const domainIndex = headers.indexOf('Tên Domain');
-        const devIndex = headers.indexOf('Tên Dev');
-        const statusIndex = headers.indexOf('Đã hoàn thành');
-        const dateIndex = headers.indexOf('Ngày hoàn thành');
-
-        console.log("=== COLUMN INDEXES ===", { domainIndex, devIndex, statusIndex, dateIndex });
-
-        const clean = (val: string | undefined) =>
-            (val ?? '').normalize('NFC').replace(/[\u00A0\uFEFF\u200B"'\r]/g, '').trim();
-
-        const parseDate = (raw: string): string | null => {
-            const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-            if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
-            if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-            return null;
-        };
+        const rows = Papa.parse<Record<string, string>>(resRebuild, {
+            header: true,
+            skipEmptyLines: true,
+        }).data;
 
         const records: WebRecord[] = [];
 
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].replace(/\r$/, '');
-            if (line.trim().length === 0) continue;
-
-            const cols = line.split('\t');
-
-            const domain = clean(cols[domainIndex]);
+        for (const row of rows) {
+            const domain = (row["Tên Domain"] ?? "").trim();
             if (!domain) continue;
 
-            const dev = clean(cols[devIndex]);
-            const status = clean(cols[statusIndex]);
-            const completedDate = parseDate(clean(cols[dateIndex]));
+            const dev = (row["Tên Dev"] ?? "").trim();
+            const status = (row["Đã hoàn thành"] ?? "").trim();
+            const rawDate = (row["Ngày hoàn thành"] ?? "").trim();
+
+            const parseDate = (raw: string): string | null => {
+                const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+                if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+                return null;
+            };
+
+            const completedDate = parseDate(rawDate);
             const month = completedDate ? completedDate.slice(0, 7) : null;
 
             records.push({ domain, dev, completedDate, month, status });
@@ -103,7 +94,7 @@ export const getLatestWebData = async (forceRefresh = false) => {
         ]);
 
         const rebuildRows = Papa.parse(resRebuild, { header: true, skipEmptyLines: true }).data;
-        const shopifyRows = Papa.parse(resShopify, { header: true, delimiter: "\t", skipEmptyLines: true }).data;
+        const shopifyRows = Papa.parse(resShopify, { header: true, skipEmptyLines: true }).data;
 
         // --- 1. FILTER REBUILD: Get last row ---
         const rebuildMap = new Map();
@@ -207,26 +198,19 @@ export const getGMCRegData = async (forceRefresh = false) => {
         // 1. CHUẨN HÓA DỮ LIỆU TỪ CSV
         const formattedData = rows.map((r: any) => ({
             proxy: (r["Proxy"] || "").trim(),
-            proxyExpiry: r["Hạn Proxy"] || "—",
+            proxyExpiry: r["Hạn Proxy"] || r["Hạn Proxy Phú"] || "—",
             twoFA: r["2FA"] || "—",
             domain: (r["WEB"] || "").trim(),
-            dateGMC: r["Ngày về GMC"] || "—",
+            dateGMC: r["Ngày về GMC"] || r["Ngày Reg GMC"] || "—",
             webType: r["Loại web"] || "—",
             status: r["Tình Trạng Sus"] || "Xanh",
-            dev: (r["DEV"] || "").trim(), // Để mặc định là chuỗi rỗng nếu không có tên người reg                
+            dev: (r["DEV"] || r["Người Reg"] || "").trim(),
             adsDate: r["Ngày chạy Ads"] || "—",
             cost: r["Chi Phí"] || "0",
             note: r["Note"] || ""
         }));
 
-        // 2. CRITICAL FILTER: Only get rows with both Domain AND assigned Dev
-        // (Completely remove trash rows like in the image you sent)
-        const validData = formattedData.filter((item: any) => {
-            const hasDomain = item.domain !== "";
-            const hasDev = item.dev !== "" && item.dev.toLowerCase() !== "unknown";
-
-            return hasDomain && hasDev;
-        });
+        const validData = formattedData.filter((item: any) => item.domain !== "");
 
         cachedGmcRegData = validData;
         return validData;
@@ -525,5 +509,349 @@ export const getDomainSheetData = async (forceRefresh = false): Promise<DomainSh
     } catch (err) {
         console.error("getDomainSheetData error:", err);
         return { domains: [], expenses: [] };
+    }
+};
+
+// ─── Info Bờ sheet ────────────────────────────────────────────────────────────
+
+export interface InfoBoRecord {
+    stt: number;
+    batchId: string;
+    tenReg: string;
+    web: string;
+    hanDomain: string;
+    infoCaNhan: string;
+    dev: string;
+    loaiDoc: string;
+    docCaNhan: string;
+    docDoanhNghiep: string;
+    trangThai: string;
+    note: string;
+    hasEin: boolean;
+    khangStatus: "khang_ve" | "fail" | "chua_khang" | "none";
+    isKhangVe: boolean;
+    isKhangFail: boolean;
+    isChuaKhang: boolean;
+    isInUse: boolean;
+    isChuaXinInfo: boolean;
+    isEinEligible: boolean;
+    isCaNhan: boolean;
+    countsInStats: boolean;
+}
+
+export interface InfoBoStats {
+    totalDeclared: number;
+    totalInSheet: number;
+    totalCountable: number;
+    einSubmitted: number;
+    einEligible: number;
+    einInfoTotal: number;
+    einRate: number;
+    khangVe: number;
+    khangFail: number;
+    chuaKhang: number;
+    khangVeRate: number;
+    khangFailRate: number;
+    infoInUse: number;
+    infoUsableRate: number;
+    chuaXinInfo: number;
+    caNhan: number;
+    chuaGanWeb: number;
+    byLoaiDoc: { name: string; value: number }[];
+}
+
+export interface InfoBoOwnerStats {
+    name: string;
+    batchId: string;
+    batchLabel: string;
+    totalInfo: number;
+    khangVe: number;
+    khangFail: number;
+    chuaKhang: number;
+}
+
+export interface InfoBoBatch {
+    id: string;
+    name: string;
+    label: string;
+    totalDeclared: number;
+    stats: InfoBoStats;
+    byOwner: InfoBoOwnerStats[];
+}
+
+export interface InfoBoSheetData {
+    batches: InfoBoBatch[];
+    batchName: string;
+    records: InfoBoRecord[];
+    stats: InfoBoStats;
+    byOwner: InfoBoOwnerStats[];
+}
+
+const getRowVal = (row: Record<string, unknown>, ...keys: string[]) => {
+    for (const key of keys) {
+        const val = row[key];
+        if (val !== undefined && val !== null && String(val).trim() !== "") {
+            return cleanCell(String(val));
+        }
+    }
+    return "";
+};
+
+const isDoanhNghiep = (loaiDoc: string) => {
+    const l = loaiDoc.toLowerCase().trim();
+    return l.includes("doanh nghi") && !l.includes("chưa xin");
+};
+
+const isCaNhan = (loaiDoc: string) => {
+    const l = loaiDoc.toLowerCase().trim();
+    return l.includes("cá nhân") || l.includes("ca nhan");
+};
+
+const isChuaXinInfo = (loaiDoc: string) =>
+    loaiDoc.toLowerCase().includes("chưa xin");
+
+/** Chưa xin doc hoặc loại trống → không tính vào báo cáo */
+const isChuaXinDoc = (loaiDoc: string) => {
+    const l = loaiDoc.trim();
+    if (!l) return true;
+    return isChuaXinInfo(l);
+};
+
+const countsInStats = (loaiDoc: string) =>
+    isDoanhNghiep(loaiDoc) || isCaNhan(loaiDoc);
+
+const hasEinDoc = (doc: string) => doc.trim().length > 0;
+
+export type KhangStatus = "khang_ve" | "fail" | "chua_khang" | "none";
+
+export const parseKhangStatus = (status: string): KhangStatus => {
+    const s = status.toLowerCase().trim();
+    if (!s) return "none";
+    if (s.includes("chưa kháng") || s.includes("chua khang")) return "chua_khang";
+    if (s === "fail" || s.includes("fail")) return "fail";
+    if (s.includes("kháng về") || s.includes("khang ve")) return "khang_ve";
+    return "none";
+};
+
+const isBatchSeparator = (tenReg: string) => {
+    const t = tenReg.toUpperCase();
+    return t.includes("INFO") && (t.includes("ĐỢT") || t.includes("DOT"));
+};
+
+const parseBatchMeta = (tenReg: string, web: string) => {
+    const totalMatch = web.match(/(\d+)/);
+    const totalDeclared = totalMatch ? parseInt(totalMatch[1], 10) : 0;
+    const dateMatch = tenReg.match(/ĐỢT\s*(.+)/i) ?? tenReg.match(/DOT\s*(.+)/i);
+    const label = (dateMatch?.[1] ?? tenReg).trim();
+    const id = label.replace(/\//g, "-").replace(/\s+/g, "_").toLowerCase() || "batch";
+    return { name: tenReg, label, totalDeclared, id };
+};
+
+export const computeInfoBoStats = (
+    records: InfoBoRecord[],
+    totalDeclared: number,
+): InfoBoStats => {
+    const totalInSheet = records.length;
+    const countable = records.filter((r) => r.countsInStats);
+    const totalCountable = countable.length;
+
+    const einEligible = records.filter((r) => r.isEinEligible).length;
+    const einSubmitted = records.filter((r) => r.isEinEligible && r.hasEin).length;
+    const chuaXinInfo = records.filter((r) => isChuaXinInfo(r.loaiDoc)).length;
+    const caNhan = records.filter((r) => r.isCaNhan).length;
+    const einInfoTotal = einEligible + caNhan;
+    const khangVe = records.filter((r) => r.khangStatus === "khang_ve").length;
+    const khangFail = records.filter((r) => r.khangStatus === "fail").length;
+    const chuaKhang = records.filter((r) => r.khangStatus === "chua_khang").length;
+    const khangResolved = khangVe + khangFail;
+    const infoInUse = countable.filter((r) => r.isInUse).length;
+    const chuaGanWeb = countable.filter((r) => !r.web).length;
+
+    const loaiMap = new Map<string, number>();
+    for (const r of records) {
+        let key = r.loaiDoc.trim();
+        if (!key) key = "Chưa xin doc";
+        else if (r.isChuaXinInfo) key = "Chưa xin Info";
+        loaiMap.set(key, (loaiMap.get(key) ?? 0) + 1);
+    }
+
+    const total = totalDeclared > 0 ? totalDeclared : totalCountable;
+
+    return {
+        totalDeclared: total,
+        totalInSheet,
+        totalCountable,
+        einSubmitted,
+        einEligible,
+        einInfoTotal,
+        einRate: einInfoTotal > 0 ? Math.round((einEligible / einInfoTotal) * 1000) / 10 : 0,
+        khangVe,
+        khangFail,
+        chuaKhang,
+        khangVeRate: khangResolved > 0 ? Math.round((khangVe / khangResolved) * 1000) / 10 : 0,
+        khangFailRate: khangResolved > 0 ? Math.round((khangFail / khangResolved) * 1000) / 10 : 0,
+        infoInUse,
+        infoUsableRate: total > 0 ? Math.round((infoInUse / total) * 1000) / 10 : 0,
+        chuaXinInfo,
+        caNhan,
+        chuaGanWeb,
+        byLoaiDoc: Array.from(loaiMap.entries()).map(([name, value]) => ({ name, value })),
+    };
+};
+
+export const computeByOwner = (
+    records: InfoBoRecord[],
+    batchId: string,
+    batchLabel: string,
+): InfoBoOwnerStats[] => {
+    const map = new Map<string, InfoBoOwnerStats>();
+
+    for (const r of records) {
+        const name = r.tenReg.trim() || "Chưa gán";
+        if (!map.has(name)) {
+            map.set(name, {
+                name,
+                batchId,
+                batchLabel,
+                totalInfo: 0,
+                khangVe: 0,
+                khangFail: 0,
+                chuaKhang: 0,
+            });
+        }
+        const o = map.get(name)!;
+        o.totalInfo++;
+        if (r.isKhangVe) o.khangVe++;
+        else if (r.isKhangFail) o.khangFail++;
+        else if (r.isChuaKhang) o.chuaKhang++;
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.totalInfo - a.totalInfo);
+};
+
+export const getInfoBoData = async (forceRefresh = false): Promise<InfoBoSheetData> => {
+    if (forceRefresh) cachedInfoBoData = null;
+    if (cachedInfoBoData && !forceRefresh) return cachedInfoBoData;
+
+    const empty: InfoBoSheetData = {
+        batches: [],
+        batchName: "",
+        records: [],
+        stats: computeInfoBoStats([], 0),
+        byOwner: [],
+    };
+
+    try {
+        const ts = new Date().getTime();
+        const sep = LINK_INFO_BO.includes("?") ? "&" : "?";
+        const text = await fetch(`${LINK_INFO_BO}${sep}t=${ts}`, { cache: "no-store" }).then((r) => r.text());
+        const rows = Papa.parse<Record<string, unknown>>(text, {
+            header: true,
+            skipEmptyLines: true,
+        }).data;
+
+        const records: InfoBoRecord[] = [];
+        const batchRecords = new Map<string, InfoBoRecord[]>();
+        const batchMeta = new Map<string, ReturnType<typeof parseBatchMeta>>();
+
+        let currentBatchId = "";
+        let batchIndex = 0;
+
+        for (const row of rows) {
+            const tenReg = getRowVal(row, "Tên ", "Tên");
+            const web = getRowVal(row, "Web");
+            const infoCaNhan = getRowVal(row, "Info cá nhân");
+
+            if (isBatchSeparator(tenReg)) {
+                const meta = parseBatchMeta(tenReg, web);
+                currentBatchId = meta.id || `batch-${++batchIndex}`;
+                batchMeta.set(currentBatchId, { ...meta, id: currentBatchId });
+                if (!batchRecords.has(currentBatchId)) batchRecords.set(currentBatchId, []);
+                continue;
+            }
+
+            if (!infoCaNhan && !web && !tenReg) continue;
+
+            if (!currentBatchId) {
+                currentBatchId = "unassigned";
+                batchMeta.set(currentBatchId, {
+                    id: currentBatchId,
+                    name: "Chưa phân đợt",
+                    label: "Chưa phân đợt",
+                    totalDeclared: 0,
+                });
+                batchRecords.set(currentBatchId, []);
+            }
+
+            const loaiDoc = getRowVal(row, "Loại Doc");
+            const docDoanhNghiep = getRowVal(row, "Doc doanh nghiệp");
+            const trangThai = getRowVal(row, "Trạng thái");
+            const sttRaw = getRowVal(row, "");
+            const stt = parseInt(sttRaw, 10) || (batchRecords.get(currentBatchId)?.length ?? 0) + 1;
+
+            const einEligible = isDoanhNghiep(loaiDoc);
+            const caNhan = isCaNhan(loaiDoc);
+            const inStats = countsInStats(loaiDoc);
+            const khangStatus = parseKhangStatus(trangThai);
+
+            const record: InfoBoRecord = {
+                stt,
+                batchId: currentBatchId,
+                tenReg,
+                web,
+                hanDomain: getRowVal(row, "Hạn Domain"),
+                infoCaNhan,
+                dev: getRowVal(row, "DEV"),
+                loaiDoc,
+                docCaNhan: getRowVal(row, "Doc cá nhân"),
+                docDoanhNghiep,
+                trangThai,
+                note: getRowVal(row, "Note"),
+                isEinEligible: einEligible,
+                isCaNhan: caNhan,
+                countsInStats: inStats,
+                hasEin: einEligible && hasEinDoc(docDoanhNghiep),
+                khangStatus,
+                isKhangVe: khangStatus === "khang_ve",
+                isKhangFail: khangStatus === "fail",
+                isChuaKhang: khangStatus === "chua_khang",
+                isChuaXinInfo: isChuaXinDoc(loaiDoc),
+                isInUse: inStats && Boolean(web),
+            };
+
+            records.push(record);
+            batchRecords.get(currentBatchId)!.push(record);
+        }
+
+        const batches: InfoBoBatch[] = Array.from(batchMeta.entries()).map(([id, meta]) => {
+            const batchRows = batchRecords.get(id) ?? [];
+            return {
+                id,
+                name: meta.name,
+                label: meta.label,
+                totalDeclared: meta.totalDeclared,
+                stats: computeInfoBoStats(batchRows, meta.totalDeclared),
+                byOwner: computeByOwner(batchRows, id, meta.label),
+            };
+        });
+
+        const batchesWithRows = batches.filter((b) => b.stats.totalInSheet > 0);
+        const totalDeclaredAll = batchesWithRows.length > 0
+            ? batchesWithRows.reduce((sum, b) => sum + b.totalDeclared, 0)
+            : batches.reduce((sum, b) => sum + b.totalDeclared, 0);
+
+        const result: InfoBoSheetData = {
+            batches,
+            batchName: batches.map((b) => b.label).join(" · "),
+            records,
+            stats: computeInfoBoStats(records, totalDeclaredAll),
+            byOwner: batches.flatMap((b) => b.byOwner),
+        };
+
+        cachedInfoBoData = result;
+        return result;
+    } catch (err) {
+        console.error("getInfoBoData error:", err);
+        return empty;
     }
 };

@@ -224,6 +224,7 @@ function RootComponent() {
   // 📋 Chuyển đổi 'label' sang 'labelKey' khớp chính xác với file i18n.ts
   const navItems = [
     { to: "/", labelKey: "dashboard", icon: "📊", exact: true },
+    { to: "/dash-info", labelKey: "dashInfo", icon: "📋" },
     { to: "/domains", labelKey: "domains", icon: "🌐" },
     { to: "/customers", labelKey: "regGmc", icon: "👥" },
     { to: "/devs", labelKey: "devGmc", icon: "🧑‍💻" },
