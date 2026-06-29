@@ -14,12 +14,56 @@ interface GMCRegItem {
   twoFA: string;
   domain: string;
   dateGMC: string;
+  reportDateGMC: string;
   webType: string;
   status: string;
   dev: string;
   adsDate: string;
+  linkAdsEgead: string;
+  dateSus: string;
+  reportDateSus: string;
   cost: string;
+  daysGreen?: string;
   note: string;
+}
+
+function ReportCell({ value, linkLabel }: { value: string; linkLabel: string }) {
+  if (!value || value === "—") {
+    return <span className="text-slate-300">—</span>;
+  }
+  if (/^https?:\/\//i.test(value.trim())) {
+    return (
+      <a
+        href={value.trim()}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline"
+      >
+        {linkLabel}
+      </a>
+    );
+  }
+  return <div className="text-xs font-bold text-slate-600 break-words">{value}</div>;
+}
+
+function LinkAdsEgeadCell({ value }: { value: string }) {
+  if (!value || value === "—") {
+    return <span className="text-slate-300">—</span>;
+  }
+  const s = value.toLowerCase();
+  let cls = "bg-slate-50 text-slate-600 border border-slate-100";
+  if (s.includes("đã link") || s.includes("da link")) {
+    cls = "bg-emerald-50 text-emerald-700 border border-emerald-100";
+  } else if (s.includes("chưa link") || s.includes("chua link")) {
+    cls = "bg-orange-50 text-orange-700 border border-orange-100";
+  } else if (s.includes("gỡ ads") || s.includes("go ads")) {
+    cls = "bg-blue-50 text-blue-700 border border-blue-100";
+  }
+  return (
+    <span className={`inline-block text-[9px] font-black uppercase px-2 py-1 rounded-lg tracking-wide leading-tight ${cls}`}>
+      {value}
+    </span>
+  );
 }
 
 export const Route = createFileRoute("/customers")({
@@ -56,8 +100,9 @@ function GMCPremiumDashboard() {
   // Helper function để check trạng thái thiết bị linh hoạt
   const isSuspended = (status: string) => {
     if (!status) return false;
-    const s = status.toLowerCase();
-    return s === "đã sus" || s === "suspended" || s === "sus";
+    const s = status.toLowerCase().trim();
+    if (s === "xanh" || s.includes("chưa sus")) return false;
+    return s.includes("đã sus") || s === "suspended" || s === "sus";
   };
 
   // Chuẩn hóa chuỗi tiền tệ từ "10,5" thành số thực 10.5
@@ -68,25 +113,49 @@ function GMCPremiumDashboard() {
     return isNaN(parsed) ? 0 : parsed;
   };
 
-  // Helper function tính số ngày sống (từ ngày dateGMC đến hôm nay)
-  const calculateDaysAlive = (dateStr: string) => {
+  const parseDmyDate = (dateStr: string): Date | null => {
     if (!dateStr || dateStr === "—") return null;
-    try {
-      const [day, month, year] = dateStr.split("/").map(Number);
-      const gmcDate = new Date(year, month - 1, day);
-      const today = new Date();
-
-      gmcDate.setHours(0, 0, 0, 0);
-      today.setHours(0, 0, 0, 0);
-
-      const diffTime = today.getTime() - gmcDate.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-      return diffDays >= 0 ? diffDays : 0;
-    } catch (e) {
-      return null;
-    }
+    const parts = dateStr.trim().split("/").map(Number);
+    if (parts.length !== 3 || parts.some((n) => isNaN(n))) return null;
+    const [day, month, year] = parts;
+    const d = new Date(year, month - 1, day);
+    d.setHours(0, 0, 0, 0);
+    return isNaN(d.getTime()) ? null : d;
   };
+
+  const daysBetween = (start: Date, end: Date): number =>
+    Math.max(0, Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+
+  /** Số ngày xanh: có Ngày Sus → từ Ngày về GMC đến Ngày Sus; không thì đến hôm nay */
+  const calculateGreenDays = (item: GMCRegItem): number | null => {
+    const gmcDate = parseDmyDate(item.dateGMC);
+    if (!gmcDate) return null;
+
+    const susDate = parseDmyDate(item.dateSus);
+    if (susDate) {
+      return daysBetween(gmcDate, susDate);
+    }
+
+    const fromSheet = item.daysGreen && item.daysGreen !== "—" ? Number(item.daysGreen) : NaN;
+    if (!isNaN(fromSheet) && fromSheet >= 0) return fromSheet;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return daysBetween(gmcDate, today);
+  };
+
+  // ==========================================
+  // ZONE 0: GLOBAL STATS (toàn bộ dữ liệu REG GMC)
+  // ==========================================
+  const globalStats = useMemo(() => {
+    const totalAcc = rawRegData.length;
+    const totalDomains = new Set(rawRegData.map((item) => item.domain.toLowerCase().trim())).size;
+    const totalLive = rawRegData.filter((item) => !isSuspended(item.status)).length;
+    const totalSus = rawRegData.filter((item) => isSuspended(item.status)).length;
+    const totalCost = rawRegData.reduce((sum, item) => sum + parseCost(item.cost), 0);
+
+    return { totalAcc, totalDomains, totalLive, totalSus, totalCost };
+  }, [rawRegData]);
 
   // ==========================================
   // ZONE 1: FILTER BY DROPDOWN CATEGORY (Stats + Charts)
@@ -227,7 +296,37 @@ function GMCPremiumDashboard() {
           </div>
         </div>
 
-        {/* DYNAMIC STATS CARDS BLOCK */}
+        {/* TỔNG REG GMC — toàn hệ thống */}
+        <div className="bg-gradient-to-r from-slate-900 to-indigo-900 p-5 rounded-2xl text-white shadow-lg flex flex-wrap items-center gap-6">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-300">{t("totalRegGmc")}</p>
+            <h2 className="text-4xl font-black mt-1">{globalStats.totalAcc}</h2>
+            <p className="text-[10px] font-medium text-slate-400 mt-1">{t("totalRegGmcDesc")}</p>
+          </div>
+          <div className="h-10 w-px bg-white/20 hidden sm:block" />
+          <div className="flex flex-wrap gap-6">
+            <div>
+              <p className="text-[9px] font-bold uppercase text-emerald-400">{t("active")}</p>
+              <p className="text-xl font-black text-emerald-300">{globalStats.totalLive}</p>
+            </div>
+            <div>
+              <p className="text-[9px] font-bold uppercase text-red-400">{t("suspended")}</p>
+              <p className="text-xl font-black text-red-300">{globalStats.totalSus}</p>
+            </div>
+            <div>
+              <p className="text-[9px] font-bold uppercase text-indigo-300">{t("actualFilteredDomains")}</p>
+              <p className="text-xl font-black">{globalStats.totalDomains}</p>
+            </div>
+            <div>
+              <p className="text-[9px] font-bold uppercase text-blue-300">{t("totalAdsCost")}</p>
+              <p className="text-xl font-black text-blue-200">
+                ${globalStats.totalCost.toLocaleString("en-US", formatOptions)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* DYNAMIC STATS CARDS BLOCK — theo bộ lọc */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
             <div>
@@ -237,7 +336,7 @@ function GMCPremiumDashboard() {
               </h2>
             </div>
             <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">
-              {searchDomain ? t("matchingSearchResult") : t("allFilteredRecords")}
+              {searchDomain ? t("matchingSearchResult") : `${t("allFilteredRecords")}: ${globalStats.totalAcc}`}
             </p>
           </div>
 
@@ -248,7 +347,7 @@ function GMCPremiumDashboard() {
                 <h2 className="text-2xl font-black text-indigo-600">{dynamicStats.totalUniqueDomains}</h2>
               </div>
             </div>
-            <p className="text-[9px] font-bold text-indigo-400 uppercase mt-3">{t("cleanedDomains")}</p>
+            <p className="text-[9px] font-bold text-indigo-400 uppercase mt-3">{t("cleanedDomains")}: {globalStats.totalDomains}</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-emerald-500 border-t-2">
@@ -263,7 +362,9 @@ function GMCPremiumDashboard() {
             </div>
             <div className="mt-3 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">{t("active")}</p>
+              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">
+                {t("searchTotal")}: {globalStats.totalLive}
+              </p>
             </div>
           </div>
 
@@ -277,7 +378,7 @@ function GMCPremiumDashboard() {
                 </span>
               </div>
             </div>
-            <p className="text-[9px] font-bold text-red-400 uppercase mt-3">{t("suspended")}</p>
+            <p className="text-[9px] font-bold text-red-400 uppercase mt-3">{t("searchTotal")}: {globalStats.totalSus}</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-blue-500 border-t-2">
@@ -290,7 +391,7 @@ function GMCPremiumDashboard() {
               </h2>
             </div>
             <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-3 bg-blue-50 w-max px-2 py-0.5 rounded-md">
-              {searchDomain ? t("searchTotal") : t("usdTotal")}
+              {t("usdTotal")}: ${globalStats.totalCost.toLocaleString('en-US', formatOptions)}
             </p>
           </div>
         </div>
@@ -388,24 +489,27 @@ function GMCPremiumDashboard() {
         {/* GMC Table */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
           <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-            <table className="w-full text-left table-fixed min-w-[1100px]">
+            <table className="w-full text-left table-fixed min-w-[1680px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  <th className="p-5 w-[30%]">{t("webAndPlatform")}</th>
-                  <th className="p-5 w-[13%]">{t("assignedStaff")}</th>
-                  <th className="p-5 w-[13%]">{t("status")}</th>
-                  <th className="p-5 w-[12%]">{t("gmcDate")}</th>
-                  <th className="p-5 w-[12%]">{t("ageDays")}</th>
-                  <th className="p-5 w-[12%]">{t("proxyExpiryLeft")}</th>
-                  <th className="p-5 w-[10%]">{t("adsCost")}</th>
+                  <th className="p-4 w-[16%]">{t("webAndPlatform")}</th>
+                  <th className="p-4 w-[7%]">{t("assignedStaff")}</th>
+                  <th className="p-4 w-[6%]">{t("status")}</th>
+                  <th className="p-4 w-[7%]">{t("gmcReturnDate")}</th>
+                  <th className="p-4 w-[9%]">{t("gmcReturnReport")}</th>
+                  <th className="p-4 w-[6%]">{t("ageDays")}</th>
+                  <th className="p-4 w-[7%]">{t("susDate")}</th>
+                  <th className="p-4 w-[9%]">{t("susReport")}</th>
+                  <th className="p-4 w-[10%]">{t("linkAdsEgead")}</th>
+                  <th className="p-4 w-[6%]">{t("adsCost")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {paginatedTableData.map((item: GMCRegItem, idx: number) => {
-                  const proxyDaysLeft = item.proxyExpiry !== "—" ? Number(item.proxyExpiry) : null;
                   const isDuplicateDomain = globalDomainFrequencyMap[item.domain.toLowerCase().trim()] > 1;
                   const itemIsSus = isSuspended(item.status);
-                  const daysAlive = calculateDaysAlive(item.dateGMC);
+                  const daysAlive = calculateGreenDays(item);
+                  const hasSusDate = item.dateSus && item.dateSus !== "—";
 
                   return (
                     <tr
@@ -415,7 +519,7 @@ function GMCPremiumDashboard() {
                         : "hover:bg-slate-50/50"
                         }`}
                     >
-                      <td className="p-5 overflow-hidden text-ellipsis whitespace-nowrap">
+                      <td className="p-4 overflow-hidden text-ellipsis whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <div className="font-bold text-slate-800 text-[14px] lowercase truncate">{item.domain || "N/A"}</div>
                           {isDuplicateDomain && (
@@ -427,13 +531,13 @@ function GMCPremiumDashboard() {
                         <div className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">{item.webType || "Unknown"}</div>
                       </td>
 
-                      <td className="p-5">
+                      <td className="p-4">
                         <span className="text-[10px] font-black text-indigo-600 bg-indigo-50/50 border border-indigo-100 px-3 py-1.5 rounded-lg uppercase tracking-wider truncate inline-block">
-                          {item.dev}
+                          {item.dev || "—"}
                         </span>
                       </td>
 
-                      <td className="p-5">
+                      <td className="p-4">
                         <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase ${itemIsSus ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-500"
                           }`}>
                           <span className={`w-1 h-1 rounded-full ${itemIsSus ? "bg-red-500" : "bg-emerald-500"}`} />
@@ -441,18 +545,22 @@ function GMCPremiumDashboard() {
                         </div>
                       </td>
 
-                      <td className="p-5">
+                      <td className="p-4">
                         <div className="text-xs font-bold text-slate-600">{item.dateGMC}</div>
                       </td>
 
-                      <td className="p-5">
+                      <td className="p-4">
+                        <ReportCell value={item.reportDateGMC} linkLabel={t("viewReport")} />
+                      </td>
+
+                      <td className="p-4">
                         {daysAlive !== null ? (
                           <div className="flex flex-col">
                             <span className={`text-xs font-black ${itemIsSus ? "text-slate-400" : "text-emerald-600"}`}>
                               {daysAlive} {daysAlive === 1 ? t("day") : t("days")}
                             </span>
                             <span className="text-[9px] text-slate-400 font-medium">
-                              {itemIsSus ? t("beforeSuspended") : t("running")}
+                              {hasSusDate ? t("untilSusDate") : itemIsSus ? t("beforeSuspended") : t("running")}
                             </span>
                           </div>
                         ) : (
@@ -460,19 +568,21 @@ function GMCPremiumDashboard() {
                         )}
                       </td>
 
-                      <td className="p-5">
-                        {proxyDaysLeft !== null && !isNaN(proxyDaysLeft) ? (
-                          <div className="flex flex-col gap-1">
-                            <div className={`text-[11px] font-black ${proxyDaysLeft < 3 ? 'text-red-500 animate-pulse' : 'text-slate-600'}`}>
-                              {proxyDaysLeft > 0 ? `${proxyDaysLeft} ${t("daysLeft")}` : t("expired")}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
+                      <td className="p-4">
+                        <div className="text-xs font-bold text-slate-600">
+                          {item.dateSus && item.dateSus !== "—" ? item.dateSus : "—"}
+                        </div>
                       </td>
 
-                      <td className="p-5">
+                      <td className="p-4">
+                        <ReportCell value={item.reportDateSus} linkLabel={t("viewReport")} />
+                      </td>
+
+                      <td className="p-4">
+                        <LinkAdsEgeadCell value={item.linkAdsEgead} />
+                      </td>
+
+                      <td className="p-4">
                         <div className="text-[15px] font-black text-slate-900">
                           ${parseCost(item.cost).toLocaleString('en-US', formatOptions)}
                         </div>
@@ -482,7 +592,7 @@ function GMCPremiumDashboard() {
                 })}
                 {paginatedTableData.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center p-10 text-sm font-medium text-slate-400">
+                    <td colSpan={10} className="text-center p-10 text-sm font-medium text-slate-400">
                       {t("noAccountData")}
                     </td>
                   </tr>

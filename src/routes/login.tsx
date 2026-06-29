@@ -35,7 +35,7 @@ function LoginPage() {
                     user: "Admin",
                     timestamp: new Date().toISOString(),
                 }));
-                navigate({ to: "/" });
+                navigate({ to: "/customers" });
             } else {
                 setError("Invalid username or password.");
             }

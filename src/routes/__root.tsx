@@ -25,7 +25,7 @@ function NotFoundComponent() {
         </p>
         <div className="mt-6">
           <Link
-            to="/"
+            to="/customers"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Go home
@@ -223,18 +223,15 @@ function RootComponent() {
 
   // 📋 Chuyển đổi 'label' sang 'labelKey' khớp chính xác với file i18n.ts
   const navItems = [
-    { to: "/", labelKey: "dashboard", icon: "📊", exact: true },
+    { to: "/customers", labelKey: "regGmc", icon: "👥" },
     { to: "/dash-info", labelKey: "dashInfo", icon: "📋" },
     { to: "/domains", labelKey: "domains", icon: "🌐" },
-    { to: "/customers", labelKey: "regGmc", icon: "👥" },
-    { to: "/devs", labelKey: "devGmc", icon: "🧑‍💻" },
+    { to: "/reg-kpi", labelKey: "regKpi", icon: "📈" },
     { to: "/web-kpi", labelKey: "webKpi", icon: "📊" },
-    { to: "/invoices", labelKey: "invoices", icon: "🧾" },
+    { to: "/web-shield-kpi", labelKey: "webShieldKpi", icon: "🛡️" },
+    { to: "/invoices", labelKey: "chiPhi", icon: "💰" },
+    { to: "/shopify", labelKey: "shopifyMgmt", icon: "🛒" },
     { to: "/profile", labelKey: "profile", icon: "👤" },
-    { to: "/reports", labelKey: "reports", icon: "📈" },
-    { to: "/shopify", labelKey: "shopify", icon: "🛒" },
-    { to: "/wordpress", labelKey: "wordpress", icon: "📝" },
-    { to: "/settings", labelKey: "settings", icon: "⚙️" },
   ];
 
   const handleLogout = () => {

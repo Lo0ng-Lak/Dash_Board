@@ -1,780 +1,597 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState, useMemo } from "react";
-import { getDomainSheetData, DomainRecord, ExpenseRecord } from "@/lib/dataService";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { getChiPhiExpenses, ExpenseRecord } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
 import { useTranslation } from "react-i18next";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, PieChart, Pie
+  ResponsiveContainer, Cell, PieChart, Pie,
 } from "recharts";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const EXPENSE_COLORS: Record<string, { bg: string; text: string; border: string; bar: string }> = {
-  "Mua domain": { bg: "#EFF6FF", text: "#1e40af", border: "#93c5fd", bar: "#3b82f6" },
-  "Chi phí ADS": { bg: "#fdf4ff", text: "#6b21a8", border: "#d8b4fe", bar: "#a855f7" },
-  "Đăng ký GMC": { bg: "#f0fdf4", text: "#166534", border: "#86efac", bar: "#22c55e" },
-  "Mua mail": { bg: "#fff7ed", text: "#9a3412", border: "#fdba74", bar: "#f97316" },
-  "default": { bg: "#f8fafc", text: "#334155", border: "#cbd5e1", bar: "#64748b" },
-};
-
-const getExpColor = (loai: string) => EXPENSE_COLORS[loai] ?? EXPENSE_COLORS["default"];
 
 const ITEMS = 12;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const getDaysLeftColor = (d: number | null) => {
-  if (d === null) return "text-slate-400";
-  if (d <= 30) return "text-red-600";
-  if (d <= 90) return "text-amber-600";
-  return "text-emerald-600";
+const TYPE_COLORS: Record<string, { bg: string; text: string; border: string; bar: string }> = {
+  "Mua domain": { bg: "#eff6ff", text: "#1e40af", border: "#93c5fd", bar: "#3b82f6" },
+  "Chi phí ADS": { bg: "#fdf4ff", text: "#6b21a8", border: "#d8b4fe", bar: "#a855f7" },
+  "Đăng kí GMC": { bg: "#f0fdf4", text: "#166534", border: "#86efac", bar: "#22c55e" },
+  "Đăng ký GMC": { bg: "#f0fdf4", text: "#166534", border: "#86efac", bar: "#22c55e" },
+  "Mua mail": { bg: "#fff7ed", text: "#9a3412", border: "#fdba74", bar: "#f97316" },
+  "Mua Proxy": { bg: "#f5f3ff", text: "#5b21b6", border: "#c4b5fd", bar: "#8b5cf6" },
+  "Chi phí khác": { bg: "#f8fafc", text: "#334155", border: "#cbd5e1", bar: "#64748b" },
+  Trendsi: { bg: "#ecfeff", text: "#0e7490", border: "#67e8f9", bar: "#06b6d4" },
 };
 
-const getDaysLeftBg = (d: number | null) => {
-  if (d === null) return "";
-  if (d <= 30) return "bg-red-50 border-l-4 border-l-red-400";
-  if (d <= 90) return "bg-amber-50/60 border-l-4 border-l-amber-400";
-  return "";
-};
-
-const fmtMonth = (ym: string) => {
-  const [y, m] = ym.split("-");
-  return `Month ${parseInt(m)}/${y}`;
-};
-
-// const fmtUSD = (n: number) =>
-//   n % 1 === 0
-//     ? `$${n.toLocaleString()}`
-//     : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const defaultColor = { bg: "#f8fafc", text: "#334155", border: "#cbd5e1", bar: "#64748b" };
+const getTypeColor = (loai: string) => TYPE_COLORS[loai] ?? defaultColor;
 
 const fmtUSD = (n: number) =>
   n % 1 === 0
     ? `$${n.toLocaleString()}`
     : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-
-const isVNDString = (raw: string) => {
-  const normalized = raw.trim().toLowerCase();
-  return /k$/i.test(normalized) || /₫|vnd|đ/.test(normalized);
+const fmtMonth = (ym: string) => {
+  const [y, m] = ym.split("-");
+  return `${parseInt(m)}/${y}`;
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+const currentMonthKey = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+};
 
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-5 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${active
-        ? "bg-slate-900 text-white shadow-md"
-        : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
-        }`}
-    >
-      {children}
-    </button>
-  );
+const fmtVND = (n: number) => `${n.toLocaleString("vi-VN")} đ`;
+
+interface ExpenseTotals {
+  usd: number;
+  vnd: number;
 }
 
-function StatCard({
-  label, value, sub, colorClass = "text-slate-900", accentClass = "",
+const expenseAmountUSD = (e: ExpenseRecord) =>
+  (e.chiPhiUSD || 0) + (e.chiPhiUSDT || 0);
+
+const expenseAmountVND = (e: ExpenseRecord) => e.chiPhiVND || 0;
+
+const sumExpenseTotals = (list: ExpenseRecord[]): ExpenseTotals => ({
+  usd: list.reduce((s, e) => s + expenseAmountUSD(e), 0),
+  vnd: list.reduce((s, e) => s + expenseAmountVND(e), 0),
+});
+
+const statsForExpenses = (list: ExpenseRecord[]) => {
+  const map: Record<string, { count: number; usd: number; vnd: number }> = {};
+  for (const e of list) {
+    if (!map[e.loaiChiPhi]) map[e.loaiChiPhi] = { count: 0, usd: 0, vnd: 0 };
+    map[e.loaiChiPhi].count += 1;
+    map[e.loaiChiPhi].usd += expenseAmountUSD(e);
+    map[e.loaiChiPhi].vnd += expenseAmountVND(e);
+  }
+  return map;
+};
+
+function MoneyTotals({
+  totals,
+  usdClass = "text-2xl font-black",
+  vndClass = "text-sm font-black text-amber-600 mt-1",
+  light = false,
 }: {
-  label: string; value: string | number; sub?: string;
-  colorClass?: string; accentClass?: string;
+  totals: ExpenseTotals;
+  usdClass?: string;
+  vndClass?: string;
+  light?: boolean;
 }) {
+  const usdColor = light ? "text-white" : "text-slate-900";
+  const vndColor = light ? "text-amber-200" : "text-amber-600";
   return (
-    <div className={`bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all ${accentClass}`}>
-      <div>
-        <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{label}</p>
-        <h2 className={`text-2xl font-black mt-1 truncate ${colorClass}`}>{value}</h2>
-      </div>
-      {sub && <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">{sub}</p>}
+    <div>
+      {totals.usd > 0 && <p className={`${usdClass} ${usdColor}`}>{fmtUSD(totals.usd)}</p>}
+      {totals.vnd > 0 && <p className={`${vndClass} ${vndColor}`}>{fmtVND(totals.vnd)}</p>}
+      {totals.usd === 0 && totals.vnd === 0 && <p className={`${usdClass} text-slate-400`}>—</p>}
     </div>
   );
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
-function DomainManagerPage() {
-  const [domains, setDomains] = useState<DomainRecord[]>([]);
-  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"domains" | "expenses">("domains");
-
-  // Domain tab filters
-  const [domSearch, setDomSearch] = useState("");
-  const [domReg, setDomReg] = useState("all");
-  const [domStatus, setDomStatus] = useState("all");
-  const [domExpiry, setDomExpiry] = useState("all"); // all | critical | warning | ok
-  const [domPage, setDomPage] = useState(1);
-  const { t } = useTranslation();
-
-  // Expense tab filters
-  const [expSearch, setExpSearch] = useState("");
-  const [expMonth, setExpMonth] = useState("all");
-  const [expLoai, setExpLoai] = useState("all");
-  const [expReg, setExpReg] = useState("all");
-  const [expPage, setExpPage] = useState(1);
-
-
-
-  const load = async (force = false) => {
-    try {
-      force && setRefreshing(true);
-      const data = await getDomainSheetData(force);
-      setDomains(data.domains);
-      setExpenses(data.expenses);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    // Chạy lần đầu tiên khi vào trang
-    load();
-
-    // Thiết lập vòng lặp tự động gọi sau mỗi 30 giây (30000 ms)
-    const interval = setInterval(() => {
-      load(true); // Truyền true để kích hoạt trạng thái refreshing ngầm
-    }, 30000);
-
-    // HỦY BỎ bộ đếm khi người dùng rời khỏi trang để tránh rò rỉ bộ nhớ (Memory Leak)
-    return () => clearInterval(interval);
-  }, []);
-
-  // ── Domain: dropdown options ──────────────────────────────────────────────
-  const domRegOptions = useMemo(() => [...new Set(domains.map(d => d.tenReg).filter(Boolean))].sort(), [domains]);
-  const domStatusOptions = useMemo(() => [...new Set(domains.map(d => d.trangThai).filter(Boolean))].sort(), [domains]);
-
-  // ── Domain: zone A (dropdowns only → stats + chart) ──────────────────────
-  const domZoneA = useMemo(() => {
-    return domains.filter(d => {
-      const matchReg = domReg === "all" || d.tenReg === domReg;
-      const matchStatus = domStatus === "all" || d.trangThai === domStatus;
-      const matchExpiry = domExpiry === "all"
-        ? true
-        : domExpiry === "critical" ? (d.daysLeft !== null && d.daysLeft <= 30)
-          : domExpiry === "warning" ? (d.daysLeft !== null && d.daysLeft > 30 && d.daysLeft <= 90)
-            : (d.daysLeft === null || d.daysLeft > 90);
-      return matchReg && matchStatus && matchExpiry;
-    });
-  }, [domains, domReg, domStatus, domExpiry]);
-
-  const domStats = useMemo(() => ({
-    total: domZoneA.length,
-    active: domZoneA.filter(d => d.trangThai?.toLowerCase() === "active").length,
-    critical: domZoneA.filter(d => d.daysLeft !== null && d.daysLeft <= 30).length,
-    warning: domZoneA.filter(d => d.daysLeft !== null && d.daysLeft > 30 && d.daysLeft <= 90).length,
-    totalCost: domZoneA.reduce((s, d) => s + d.gia, 0),
-  }), [domZoneA]);
-
-  const domExpiryChart = useMemo(() => [
-    { name: "≤ 30 days", value: domStats.critical, color: "#ef4444" },
-    { name: "31–90 days", value: domStats.warning, color: "#f59e0b" },
-    { name: "> 90 days", value: domZoneA.filter(d => d.daysLeft !== null && d.daysLeft > 90).length, color: "#10b981" },
-  ].filter(x => x.value > 0), [domStats, domZoneA]);
-
-  const regBarData = useMemo(() => {
-    const map: Record<string, number> = {};
-    domZoneA.forEach(d => { if (d.tenReg) map[d.tenReg] = (map[d.tenReg] || 0) + 1; });
-    return Object.entries(map).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
-  }, [domZoneA]);
-
-  // ── Domain: zone B (+ search → table) ────────────────────────────────────
-  const domZoneB = useMemo(() => {
-    if (!domSearch.trim()) return domZoneA;
-    const q = domSearch.toLowerCase();
-    return domZoneA.filter(d =>
-      d.domain.toLowerCase().includes(q) || d.tenReg.toLowerCase().includes(q)
+function AmountCell({ e }: { e: ExpenseRecord }) {
+  if (e.chiPhiUSDT > 0) {
+    return (
+      <span className="text-[11px] font-black text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-200">
+        {e.chiPhiUSDT} USDT
+      </span>
     );
-  }, [domZoneA, domSearch]);
+  }
+  if (e.chiPhiVND > 0) {
+    return (
+      <span className="text-[11px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+        {e.chiPhiVND.toLocaleString("vi-VN")} VND
+      </span>
+    );
+  }
+  if (e.chiPhiRaw && /vnd|₫|đ/i.test(e.chiPhiRaw) && !e.chiPhiUSD) {
+    return <span className="text-[11px] font-black text-amber-600">{e.chiPhiRaw}</span>;
+  }
+  return <span className="text-sm font-black text-slate-900">{fmtUSD(e.chiPhiUSD || 0)}</span>;
+}
 
-  const domSorted = useMemo(() =>
-    [...domZoneB].sort((a, b) => (a.daysLeft ?? 9999) - (b.daysLeft ?? 9999)),
-    [domZoneB]);
+function ChiPhiPage() {
+  const { t } = useTranslation();
+  const [loaiFilter, setLoaiFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [monthFilter, setMonthFilter] = useState("all");
+  const [regFilter, setRegFilter] = useState("all");
+  const [page, setPage] = useState(1);
 
-  const domPaginated = useMemo(() => {
-    const s = (domPage - 1) * ITEMS;
-    return domSorted.slice(s, s + ITEMS);
-  }, [domSorted, domPage]);
+  const { data: expenses = [], isLoading } = useQuery({
+    queryKey: ["chiPhiExpenses"],
+    queryFn: () => getChiPhiExpenses(true),
+    refetchInterval: 30000,
+  });
 
-  // ── Expense: dropdown options ─────────────────────────────────────────────
-  const expMonthOptions = useMemo(() =>
-    [...new Set(expenses.map(e => e.month).filter(Boolean) as string[])].sort((a, b) => b.localeCompare(a)),
-    [expenses]);
-  const expLoaiOptions = useMemo(() => [...new Set(expenses.map(e => e.loaiChiPhi).filter(Boolean))].sort(), [expenses]);
-  const expRegOptions = useMemo(() => [...new Set(expenses.map(e => e.tenReg).filter(Boolean))].sort(), [expenses]);
+  const loaiOptions = useMemo(
+    () => [...new Set(expenses.map((e) => e.loaiChiPhi).filter(Boolean))].sort(),
+    [expenses],
+  );
 
-  // ── Expense: zone A ───────────────────────────────────────────────────────
-  const expZoneA = useMemo(() => {
-    return expenses.filter(e => {
-      const matchMonth = expMonth === "all" || e.month === expMonth;
-      const matchLoai = expLoai === "all" || e.loaiChiPhi === expLoai;
-      const matchReg = expReg === "all" || e.tenReg === expReg;
-      return matchMonth && matchLoai && matchReg;
+  const monthOptions = useMemo(
+    () => [...new Set(expenses.map((e) => e.month).filter(Boolean) as string[])].sort((a, b) => b.localeCompare(a)),
+    [expenses],
+  );
+
+  const regOptions = useMemo(
+    () => [...new Set(expenses.map((e) => e.tenReg).filter(Boolean))].sort(),
+    [expenses],
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return expenses.filter((e) => {
+      const matchLoai = loaiFilter === "all" || e.loaiChiPhi === loaiFilter;
+      const matchMonth = monthFilter === "all" || e.month === monthFilter;
+      const matchReg = regFilter === "all" || e.tenReg === regFilter;
+      const matchSearch = !q
+        || e.tenWeb.toLowerCase().includes(q)
+        || e.tenReg.toLowerCase().includes(q)
+        || e.tenTheAds.toLowerCase().includes(q)
+        || e.loaiChiPhi.toLowerCase().includes(q);
+      return matchLoai && matchMonth && matchReg && matchSearch;
     });
-  }, [expenses, expMonth, expLoai, expReg]);
+  }, [expenses, loaiFilter, monthFilter, regFilter, search]);
 
-  const expStats = useMemo(() => {
-    const totalUSD = expZoneA.reduce((s, e) => s + e.chiPhiUSD, 0);
-    const totalVND = expZoneA.reduce((s, e) => s + e.chiPhiVND, 0);
-    const totalUSDT = expZoneA.reduce((s, e) => s + (e.chiPhiUSDT || 0), 0);
-    const total = totalUSD; // keep for compat
-    const byType: Record<string, number> = {};
-    expZoneA.forEach(e => {
-      byType[e.loaiChiPhi] = (byType[e.loaiChiPhi] || 0) + (e.chiPhiUSD || 0) + (e.chiPhiUSDT || 0);
-    });
-    return { total, totalUSD, totalVND, totalUSDT, byType, count: expZoneA.length };
-  }, [expZoneA]);
+  const statsByType = useMemo(() => statsForExpenses(expenses), [expenses]);
 
-  const expPieData = useMemo(() =>
-    Object.entries(expStats.byType).map(([name, value]) => ({
-      name, value, color: getExpColor(name).bar,
-    })).sort((a, b) => b.value - a.value),
-    [expStats]);
-
-  const expMonthlyBar = useMemo(() => {
-    const map: Record<string, number> = {};
-    expZoneA.forEach(e => {
-      if (e.month) map[e.month] = (map[e.month] || 0) + e.chiPhiUSD;
+  const monthlyStats = useMemo(() => {
+    const map: Record<string, { totalUsd: number; totalVnd: number; count: number }> = {};
+    expenses.forEach((e) => {
+      if (!e.month) return;
+      if (!map[e.month]) map[e.month] = { totalUsd: 0, totalVnd: 0, count: 0 };
+      map[e.month].totalUsd += expenseAmountUSD(e);
+      map[e.month].totalVnd += expenseAmountVND(e);
+      map[e.month].count += 1;
     });
     return Object.entries(map)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([month, total]) => ({ month: fmtMonth(month), total }));
-  }, [expZoneA]);
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([month, data]) => ({ month, label: fmtMonth(month), ...data }));
+  }, [expenses]);
 
-  // Top spender card
-  const topSpender = useMemo(() => {
-    const map: Record<string, number> = {};
-    expZoneA.forEach(e => { if (e.tenReg) map[e.tenReg] = (map[e.tenReg] || 0) + e.chiPhiUSD; });
-    const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
-    return sorted[0] ? { name: sorted[0][0], total: sorted[0][1] } : null;
-  }, [expZoneA]);
+  const thisMonthKey = useMemo(() => currentMonthKey(), []);
 
-  // ── Expense: zone B (+ search → table) ───────────────────────────────────
-  const expZoneB = useMemo(() => {
-    if (!expSearch.trim()) return expZoneA;
-    const q = expSearch.toLowerCase();
-    return expZoneA.filter(e =>
-      e.tenWeb.toLowerCase().includes(q) ||
-      e.tenReg.toLowerCase().includes(q) ||
-      e.tenTheAds.toLowerCase().includes(q)
-    );
-  }, [expZoneA, expSearch]);
+  const currentMonthExpenses = useMemo(
+    () => expenses.filter((e) => e.month === thisMonthKey),
+    [expenses, thisMonthKey],
+  );
 
-  const expPaginated = useMemo(() => {
-    const s = (expPage - 1) * ITEMS;
-    return expZoneB.slice(s, s + ITEMS);
-  }, [expZoneB, expPage]);
+  const currentMonthStats = useMemo(() => statsForExpenses(currentMonthExpenses), [currentMonthExpenses]);
 
-  if (loading) {
-    return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">Loading data...</div>;
+  const prevMonthKey = useMemo(() => {
+    const [y, m] = thisMonthKey.split("-").map(Number);
+    const d = new Date(y, m - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, [thisMonthKey]);
+
+  const currentMonthTotals = useMemo(
+    () => sumExpenseTotals(currentMonthExpenses),
+    [currentMonthExpenses],
+  );
+
+  const prevMonthTotals = useMemo(
+    () => sumExpenseTotals(expenses.filter((e) => e.month === prevMonthKey)),
+    [expenses, prevMonthKey],
+  );
+
+  const filteredStatsByType = useMemo(() => statsForExpenses(filtered), [filtered]);
+
+  const pieData = useMemo(() => {
+    const source = monthFilter === "all" ? statsByType : filteredStatsByType;
+    return Object.entries(source)
+      .map(([name, { usd }]) => ({ name, value: usd, color: getTypeColor(name).bar }))
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [statsByType, filteredStatsByType, monthFilter]);
+
+  const pieDataVnd = useMemo(() => {
+    const source = monthFilter === "all" ? statsByType : filteredStatsByType;
+    return Object.entries(source)
+      .map(([name, { vnd }]) => ({ name, value: vnd, color: getTypeColor(name).bar }))
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [statsByType, filteredStatsByType, monthFilter]);
+
+  const monthlyBar = useMemo(
+    () => monthlyStats
+      .slice()
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map(({ label, totalUsd, totalVnd }) => ({ month: label, totalUsd, totalVnd })),
+    [monthlyStats],
+  );
+
+  const paginated = useMemo(() => {
+    const start = (page - 1) * ITEMS;
+    return filtered.slice(start, start + ITEMS);
+  }, [filtered, page]);
+
+  const grandTotals = useMemo(() => sumExpenseTotals(expenses), [expenses]);
+
+  const filteredTotals = useMemo(() => sumExpenseTotals(filtered), [filtered]);
+
+  const displayTotals = monthFilter === "all" ? grandTotals : filteredTotals;
+
+  useEffect(() => { setPage(1); }, [loaiFilter, search, monthFilter, regFilter]);
+
+  if (isLoading) {
+    return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">{t("loadingSystemData")}</div>;
   }
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-8 text-slate-900">
       <div className="max-w-7xl mx-auto space-y-8">
 
-        {/* ── Header ── */}
-        <div className="flex flex-col md:flex-row justify-between items-end gap-4">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("domainManager")}</h1>
-            <p className="text-slate-500 font-medium text-sm">{t("domainManagerDesc")}</p>
+        <div className="space-y-1">
+          <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("chiPhiTitle")}</h1>
+          <p className="text-slate-500 font-medium text-sm">{t("chiPhiDesc")}</p>
+        </div>
+
+        {/* Tabs theo Tên chi phí trên sheet */}
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setLoaiFilter("all")}
+            className={`px-4 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${loaiFilter === "all"
+              ? "bg-slate-900 text-white shadow-md"
+              : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
+              }`}
+          >
+            {t("allExpenseTypes")} ({expenses.length})
+          </button>
+          {loaiOptions.map((loai) => {
+            const c = getTypeColor(loai);
+            const active = loaiFilter === loai;
+            return (
+              <button
+                key={loai}
+                onClick={() => setLoaiFilter(loai)}
+                className={`px-4 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all border ${active ? "shadow-md text-white" : "bg-white"}`}
+                style={active
+                  ? { background: c.bar, borderColor: c.bar }
+                  : { color: c.text, borderColor: c.border, background: c.bg }}
+              >
+                {loai} ({statsByType[loai]?.count ?? 0})
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Dash tháng hiện tại */}
+        <div className="bg-white rounded-3xl border border-indigo-200 shadow-sm overflow-hidden">
+          <div className="bg-indigo-600 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-[9px] font-black uppercase text-indigo-200 tracking-widest">{t("currentMonthDash")}</p>
+              <h2 className="text-xl font-black text-white mt-1">
+                {t("monthLabel")} {fmtMonth(thisMonthKey)}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMonthFilter(monthFilter === thisMonthKey ? "all" : thisMonthKey)}
+              className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-white/15 text-white hover:bg-white/25 transition-all"
+            >
+              {monthFilter === thisMonthKey ? t("clearMonthFilter") : t("filterThisMonth")}
+            </button>
           </div>
-          <div className="flex items-center gap-3">
-            <TabBtn active={activeTab === "domains"} onClick={() => setActiveTab("domains")}>
-              🌐 {t("domains")}
-            </TabBtn>
-            <TabBtn active={activeTab === "expenses"} onClick={() => setActiveTab("expenses")}>
-              💰 {t("expenses")}
-            </TabBtn>
+          <div className="p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
+              <p className="text-[9px] font-black uppercase text-indigo-400">{t("thisMonthSpend")}</p>
+              <MoneyTotals totals={currentMonthTotals} usdClass="text-2xl font-black text-indigo-700" vndClass="text-sm font-black mt-1" />
+              <p className="text-[9px] font-bold text-indigo-300 mt-2">{currentMonthExpenses.length} {t("records")}</p>
+            </div>
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <p className="text-[9px] font-black uppercase text-slate-400">{t("prevMonthSpend")}</p>
+              <MoneyTotals totals={prevMonthTotals} usdClass="text-2xl font-black text-slate-700" vndClass="text-sm font-black mt-1" />
+              <p className="text-[9px] font-bold text-slate-300 mt-2">{fmtMonth(prevMonthKey)}</p>
+            </div>
+            <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+              <p className="text-[9px] font-black uppercase text-emerald-500">{t("allTimeTotal")}</p>
+              <MoneyTotals totals={grandTotals} usdClass="text-2xl font-black text-emerald-700" vndClass="text-sm font-black mt-1" />
+              <p className="text-[9px] font-bold text-emerald-300 mt-2">{expenses.length} {t("records")}</p>
+            </div>
+            {Object.entries(currentMonthStats)
+              .sort((a, b) => (b[1].usd + b[1].vnd) - (a[1].usd + a[1].vnd))
+              .slice(0, 3)
+              .map(([name, { usd, vnd, count }]) => {
+                const c = getTypeColor(name);
+                return (
+                  <div key={name} className="bg-white p-4 rounded-2xl border border-slate-100 border-t-2" style={{ borderTopColor: c.bar }}>
+                    <p className="text-[9px] font-black uppercase text-slate-400 truncate">{name}</p>
+                    <MoneyTotals totals={{ usd, vnd }} usdClass="text-xl font-black" vndClass="text-xs font-black mt-1" />
+                    <p className="text-[9px] font-bold text-slate-300 mt-2">{count} {t("records")}</p>
+                  </div>
+                );
+              })}
+            {currentMonthExpenses.length === 0 && (
+              <div className="col-span-full text-center py-4 text-sm font-medium text-slate-400">
+                {t("noSpendThisMonth")}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ════════════════════════════════════════════════════════════
-          TAB 1 — DOMAINS
-          ════════════════════════════════════════════════════════════ */}
-        {activeTab === "domains" && (
-          <>
-            {/* Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-              <StatCard label={t("totalDomains")} value={domStats.total} sub={t("inCurrentFilter")} />
-              <StatCard
-                label={t("active")}
-                value={domStats.active}
-                colorClass="text-emerald-600"
-                accentClass="border-t-emerald-500 border-t-2"
-                sub={`${domStats.total > 0 ? ((domStats.active / domStats.total) * 100).toFixed(1) : 0}% ${t("ofTotal")}`}
-              />
-              <StatCard
-                label={`⚠ ${t("expiringLessThan30d")}`}
-                value={domStats.critical}
-                colorClass="text-red-600"
-                accentClass="border-t-red-500 border-t-2"
-                sub={t("renewImmediately")}
-              />
-              <StatCard
-                label={t("expiring31To90d")}
-                value={domStats.warning}
-                colorClass="text-amber-600"
-                accentClass="border-t-amber-500 border-t-2"
-                sub={t("planRenewalSoon")}
-              />
-              <StatCard
-                label={t("totalDomainCost")}
-                value={fmtUSD(domStats.totalCost)}
-                colorClass="text-indigo-600"
-                accentClass="border-t-indigo-500 border-t-2"
-                sub={t("filteredTotal")}
-              />
-            </div>
-
-            {/* Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("expiryDistribution")}</h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={domExpiryChart} innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value">
-                        {domExpiryChart.map((e, i) => <Cell key={i} fill={e.color} />)}
-                      </Pie>
-                      <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex flex-col gap-1.5 mt-4">
-                  {domExpiryChart.map(d => (
-                    <div key={d.name} className="flex items-center gap-2 text-[10px] font-bold" style={{ color: d.color }}>
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
-                      {/* Có thể bọc hàm t() bên ngoài nếu d.name là key tĩnh, hoặc giữ nguyên nếu d.name map từ API */}
-                      {t(d.name)}: {d.value}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("domainsByRegistrant")}</h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={regBarData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
-                      <YAxis hide />
-                      <Tooltip
-                        contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}
-                        formatter={(v) => [v, t("domains")]}
-                      />
-                      <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={32} fill="#6366f1" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-
-            {/* Filters */}
-            <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-3 shadow-sm">
-              <input
-                type="text"
-                placeholder={t("searchDomainPlaceholder")}
-                className="flex-1 min-w-[180px] px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl border border-transparent focus:border-blue-100 transition-all"
-                value={domSearch}
-                onChange={e => { setDomSearch(e.target.value); setDomPage(1); }}
-              />
-              <select
-                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={domReg}
-                onChange={e => { setDomReg(e.target.value); setDomPage(1); }}
+        {/* Thẻ theo tháng */}
+        {monthlyStats.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {monthlyStats.map((m) => (
+              <button
+                key={m.month}
+                type="button"
+                onClick={() => setMonthFilter(monthFilter === m.month ? "all" : m.month)}
+                className={`px-4 py-3 rounded-xl border text-left transition-all hover:shadow-md min-w-[100px] ${monthFilter === m.month
+                  ? "bg-indigo-600 border-indigo-600 text-white shadow-md"
+                  : "bg-white border-slate-200 hover:border-indigo-200"
+                  }`}
               >
-                <option value="all">👤 {t("allRegistrants")}</option>
-                {domRegOptions.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
-              </select>
-              <select
-                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={domStatus}
-                onChange={e => { setDomStatus(e.target.value); setDomPage(1); }}
-              >
-                <option value="all">🔘 {t("allStatus")}</option>
-                {domStatusOptions.map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}
-              </select>
-              <select
-                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={domExpiry}
-                onChange={e => { setDomExpiry(e.target.value); setDomPage(1); }}
-              >
-                <option value="all">📅 {t("allExpiry")}</option>
-                <option value="critical">🔴 ≤ 30 {t("days").toUpperCase()}</option>
-                <option value="warning">🟡 31–90 {t("days").toUpperCase()}</option>
-                <option value="ok">🟢 &gt; 90 {t("days").toUpperCase()}</option>
-              </select>
-              {(domSearch || domReg !== "all" || domStatus !== "all" || domExpiry !== "all") && (
-                <button
-                  onClick={() => { setDomSearch(""); setDomReg("all"); setDomStatus("all"); setDomExpiry("all"); setDomPage(1); }}
-                  className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
-                >
-                  ✕ {t("clear")}
-                </button>
-              )}
-            </div>
-
-            {/* Domain Table */}
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-              <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-                <table className="w-full text-left table-fixed min-w-[1000px]">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <th className="p-4 w-[5%]">#</th>
-                      <th className="p-4 w-[12%]">{t("thRegistrant")}</th>
-                      <th className="p-4 w-[25%]">{t("thDomain")}</th>
-                      <th className="p-4 w-[12%]">{t("thPurchaseDate")}</th>
-                      <th className="p-4 w-[13%]">{t("thExpiryDate")}</th>
-                      <th className="p-4 w-[9%] text-center">{t("thDaysLeft")}</th>
-                      <th className="p-4 w-[9%] text-right">{t("thPrice")}</th>
-                      <th className="p-4 w-[10%]">{t("thToolStatus")}</th>
-                      <th className="p-4 w-[5%] text-center">⚠</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {domPaginated.map((d, i) => {
-                      const isExpiring = d.daysLeft !== null && d.daysLeft <= 30;
-                      const isWarning = d.daysLeft !== null && d.daysLeft > 30 && d.daysLeft <= 90;
-                      return (
-                        <tr key={i} className={`transition-all hover:bg-slate-50/60 ${getDaysLeftBg(d.daysLeft)}`}>
-                          <td className="p-4 text-[11px] text-slate-400 font-bold">{d.stt}</td>
-                          <td className="p-4">
-                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg uppercase tracking-wider">
-                              {d.tenReg || "—"}
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            <a
-                              href={`https://${d.domain}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-bold text-slate-800 text-sm lowercase hover:text-indigo-600 transition-colors truncate block"
-                            >
-                              {d.domain}
-                            </a>
-                          </td>
-                          <td className="p-4 text-[11px] text-slate-500 font-bold">{d.ngayMua || "—"}</td>
-                          <td className="p-4">
-                            <span className={`text-[11px] font-bold ${getDaysLeftColor(d.daysLeft)}`}>
-                              {d.expiryRaw || "—"}
-                            </span>
-                          </td>
-                          <td className="p-4 text-center">
-                            <span className={`text-sm font-black ${getDaysLeftColor(d.daysLeft)}`}>
-                              {d.daysLeft !== null ? d.daysLeft : "—"}
-                            </span>
-                          </td>
-                          <td className="p-4 text-right">
-                            <span className="text-sm font-black text-slate-700">
-                              {d.gia > 0 ? fmtUSD(d.gia) : "—"}
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${d.trangThai?.toLowerCase() === "active" ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
-                              }`}>
-                              <span className={`w-1 h-1 rounded-full ${d.trangThai?.toLowerCase() === "active" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-                              {d.trangThai || "—"}
-                            </div>
-                          </td>
-                          <td className="p-4 text-center">
-                            {isExpiring ? (
-                              <span className="text-[9px] font-black bg-red-500 text-white px-2 py-0.5 rounded-full uppercase animate-pulse">{t("statusUrgent")}</span>
-                            ) : isWarning ? (
-                              <span className="text-[9px] font-black bg-amber-400 text-white px-2 py-0.5 rounded-full uppercase">{t("statusSoon")}</span>
-                            ) : (
-                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full uppercase">{t("statusOk")}</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-
-                    {domPaginated.length === 0 && (
-                      <tr>
-                        <td colSpan={9} className="text-center p-14 text-sm font-medium text-slate-400">
-                          {t("noDomainsFound")}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <Pagination currentPage={domPage} totalItems={domSorted.length} itemsPerPage={ITEMS} onPageChange={setDomPage} />
-            </div>
-          </>
+                <p className={`text-[9px] font-black uppercase ${monthFilter === m.month ? "text-indigo-200" : "text-slate-400"}`}>
+                  {m.label}
+                </p>
+                <p className={`text-lg font-black mt-0.5 ${monthFilter === m.month ? "text-white" : "text-slate-800"}`}>
+                  {m.totalUsd > 0 ? fmtUSD(m.totalUsd) : null}
+                </p>
+                {m.totalVnd > 0 && (
+                  <p className={`text-xs font-black ${monthFilter === m.month ? "text-amber-200" : "text-amber-600"}`}>
+                    {fmtVND(m.totalVnd)}
+                  </p>
+                )}
+                <p className={`text-[9px] font-bold ${monthFilter === m.month ? "text-indigo-200" : "text-slate-400"}`}>
+                  {m.count} {t("records")}
+                </p>
+              </button>
+            ))}
+          </div>
         )}
 
-        {/* ════════════════════════════════════════════════════════════
-          TAB 2 — EXPENSES
-          ════════════════════════════════════════════════════════════ */}
-        {activeTab === "expenses" && (
-          <>
-            {/* Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-              <StatCard label={t("totalRecords")} value={expStats.count} sub={t("inCurrentFilter")} />
-
-              {/* Combined spend card — USD + VND + USDT */}
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-emerald-500 border-t-2 sm:col-span-2 md:col-span-1">
-                <p className="text-[9px] font-black uppercase text-emerald-500 tracking-[0.15em]">{t("totalSpend")}</p>
-                <div className="mt-1 flex flex-col gap-1">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl font-black text-emerald-600">{fmtUSD(expStats.totalUSD)}</span>
-                    <span className="text-[9px] font-black text-emerald-400 uppercase">USD</span>
-                  </div>
-                  {expStats.totalVND > 0 && (
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-lg font-black text-amber-500">
-                        {expStats.totalVND.toLocaleString("vi-VN")}
-                      </span>
-                      <span className="text-[9px] font-black text-amber-400 uppercase">VND</span>
-                    </div>
-                  )}
-                  {expStats.totalUSDT > 0 && (
-                    <div className="flex items-baseline gap-1.5 border-t border-dashed border-slate-100 pt-1 mt-0.5">
-                      <span className="text-lg font-black text-green-600">
-                        {expStats.totalUSDT.toLocaleString("en-US")}
-                      </span>
-                      <span className="text-[9px] font-black text-green-400 uppercase">USDT</span>
-                    </div>
-                  )}
-                </div>
-                <p className="text-[9px] font-black text-slate-300 uppercase mt-2">{t("allExpenseTypes")}</p>
-              </div>
-
-              <StatCard
-                label={t("adsSpend")}
-                value={fmtUSD(expStats.byType["Chi phí ADS"] ?? 0)}
-                colorClass="text-purple-600"
-                accentClass="border-t-purple-500 border-t-2"
-                sub={t("advertisingCost")}
+        {/* Tổng quan */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-t-emerald-500 border-t-2">
+            <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">
+              {monthFilter === "all" ? t("totalSpendUsd") : `${t("totalSpendUsd")} — ${fmtMonth(monthFilter)}`}
+            </p>
+            <h2 className="text-2xl font-black text-emerald-600 mt-1">{fmtUSD(displayTotals.usd)}</h2>
+            <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">
+              {monthFilter === "all" ? expenses.length : filtered.length} {t("records")}
+            </p>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-t-amber-500 border-t-2">
+            <p className="text-[9px] font-black uppercase text-amber-500 tracking-[0.15em]">
+              {monthFilter === "all" ? t("totalSpendVnd") : `${t("totalSpendVnd")} — ${fmtMonth(monthFilter)}`}
+            </p>
+            <h2 className="text-2xl font-black text-amber-600 mt-1">{fmtVND(displayTotals.vnd)}</h2>
+            <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">{t("vndOnlyNote")}</p>
+          </div>
+          {pieData.slice(0, 3).map((d) => {
+            const st = monthFilter === "all" ? statsByType[d.name] : filteredStatsByType[d.name];
+            return (
+            <div key={d.name} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-t-2" style={{ borderTopColor: d.color }}>
+              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em] truncate">{d.name}</p>
+              <MoneyTotals
+                totals={{ usd: st?.usd ?? 0, vnd: st?.vnd ?? 0 }}
+                usdClass="text-xl font-black"
+                vndClass="text-xs font-black mt-1"
               />
-
-              <StatCard
-                label={t("domainSpend")}
-                value={fmtUSD(expStats.byType["Mua domain"] ?? 0)}
-                colorClass="text-blue-600"
-                accentClass="border-t-blue-500 border-t-2"
-                sub={t("domainPurchases")}
-              />
-
-              <StatCard
-                label={topSpender ? t("topSpender") : t("gmcAndMail")}
-                value={topSpender ? topSpender.name : fmtUSD((expStats.byType["Đăng ký GMC"] ?? 0) + (expStats.byType["Mua mail"] ?? 0))}
-                colorClass="text-indigo-600"
-                accentClass="border-t-indigo-500 border-t-2"
-                sub={topSpender ? fmtUSD(topSpender.total) : t("otherCosts")}
-              />
+              <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">
+                {st?.count ?? 0} {t("records")}
+              </p>
             </div>
+            );
+          })}
+        </div>
 
-            {/* Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("spendByCategory")}</h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={expPieData} innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value">
-                        {expPieData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}
-                        formatter={(v: number) => [fmtUSD(v), ""]}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex flex-col gap-1.5 mt-4">
-                  {expPieData.map(d => (
-                    <div key={d.name} className="flex items-center justify-between text-[10px] font-bold" style={{ color: d.color }}>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
-                        {t(d.name)}
+        {/* Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("spendByCategory")} (USD)</h3>
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieData} innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value">
+                    {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => [fmtUSD(v), ""]} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          {pieDataVnd.length > 0 && (
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+              <h3 className="text-xs font-black uppercase text-amber-500 mb-6 tracking-widest">{t("spendByCategoryVnd")}</h3>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieDataVnd} innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value">
+                      {pieDataVnd.map((e, i) => <Cell key={i} fill={e.color} />)}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => [fmtVND(v), ""]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          <div className={`bg-white p-6 rounded-3xl border border-slate-200 shadow-sm ${pieDataVnd.length > 0 ? "" : "lg:col-span-2"}`}>
+            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("monthlySpendUsd")}</h3>
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyBar}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} />
+                  <YAxis hide />
+                  <Tooltip formatter={(v: number) => [fmtUSD(v), t("totalSpendUsd")]} />
+                  <Bar dataKey="totalUsd" radius={[4, 4, 0, 0]} barSize={28} fill="#8b5cf6" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          {monthlyBar.some((m) => m.totalVnd > 0) && (
+            <div className="lg:col-span-3 bg-white p-6 rounded-3xl border border-amber-200 shadow-sm">
+              <h3 className="text-xs font-black uppercase text-amber-500 mb-6 tracking-widest">{t("monthlySpendVnd")}</h3>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlyBar.filter((m) => m.totalVnd > 0)}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} />
+                    <YAxis hide />
+                    <Tooltip formatter={(v: number) => [fmtVND(v), t("totalSpendVnd")]} />
+                    <Bar dataKey="totalVnd" radius={[4, 4, 0, 0]} barSize={28} fill="#f59e0b" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-3 shadow-sm items-center">
+          <input
+            type="text"
+            placeholder={t("searchExpensePlaceholder")}
+            className="flex-1 min-w-[200px] px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600"
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+          >
+            <option value="all">📅 {t("allMonths")}</option>
+            {monthOptions.map((m) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
+          </select>
+          <select
+            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600"
+            value={regFilter}
+            onChange={(e) => setRegFilter(e.target.value)}
+          >
+            <option value="all">👤 {t("allRegistrants")}</option>
+            {regOptions.map((r) => <option key={r} value={r}>{r.toUpperCase()}</option>)}
+          </select>
+          <div className="text-[10px] font-bold text-slate-400 uppercase px-2 flex flex-col items-end">
+            <span>{filtered.length} {t("records")}</span>
+            <span className="text-emerald-600">{fmtUSD(filteredTotals.usd)}</span>
+            {filteredTotals.vnd > 0 && <span className="text-amber-600">{fmtVND(filteredTotals.vnd)}</span>}
+          </div>
+        </div>
+
+        {/* Bảng — đúng cột sheet I→O */}
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
+          <div className="w-full overflow-x-auto">
+            <table className="w-full text-left table-fixed min-w-[1100px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  <th className="p-4 w-[11%]">{t("thRegistrant")}</th>
+                  <th className="p-4 w-[12%]">{t("thType")}</th>
+                  <th className="p-4 w-[10%]">{t("thDate")}</th>
+                  <th className="p-4 w-[22%]">{t("thWebsite")}</th>
+                  <th className="p-4 w-[17%]">{t("thAdsCard")}</th>
+                  <th className="p-4 w-[10%] text-right">{t("thAmount")}</th>
+                  <th className="p-4 w-[14%]">{t("thBill")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {paginated.map((e, i) => {
+                  const c = getTypeColor(e.loaiChiPhi);
+                  return (
+                    <tr key={i} className="hover:bg-slate-50/60 transition-all">
+                      <td className="p-4">
+                        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg uppercase">
+                          {e.tenReg}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span
+                          className="text-[10px] font-black px-2.5 py-1 rounded-full uppercase"
+                          style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}
+                        >
+                          {e.loaiChiPhi}
+                        </span>
+                      </td>
+                      <td className="p-4 text-[11px] text-slate-500 font-bold whitespace-nowrap">
+                        {e.ngayThanhToan || "—"}
+                      </td>
+                      <td className="p-4 text-sm font-bold text-slate-700 lowercase truncate">{e.tenWeb || "—"}</td>
+                      <td className="p-4 text-[11px] font-bold text-slate-600 truncate">{e.tenTheAds || "—"}</td>
+                      <td className="p-4 text-right"><AmountCell e={e} /></td>
+                      <td className="p-4">
+                        {e.billChiPhi ? (
+                          <div className="flex flex-col gap-1">
+                            {e.billChiPhi.split(/[,|]/).map((link) => link.trim()).filter(Boolean).map((cleanLink, idx, arr) => (
+                              <a
+                                key={idx}
+                                href={cleanLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] font-black text-blue-500 hover:text-blue-700 underline truncate"
+                              >
+                                {arr.length > 1 ? `${t("viewBill")} #${idx + 1}` : t("viewBill")}
+                              </a>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {paginated.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-center p-14 text-sm font-medium text-slate-400">
+                      {t("noExpenseRecordsFound")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {filtered.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-900 text-white">
+                    <td colSpan={5} className="p-4 text-[10px] font-black uppercase tracking-widest">
+                      {t("tableTotal")} ({filtered.length})
+                    </td>
+                    <td className="p-4 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        {filteredTotals.usd > 0 && (
+                          <span className="text-sm font-black text-emerald-300">{fmtUSD(filteredTotals.usd)}</span>
+                        )}
+                        {filteredTotals.vnd > 0 && (
+                          <span className="text-xs font-black text-amber-300">{fmtVND(filteredTotals.vnd)}</span>
+                        )}
                       </div>
-                      <span>{fmtUSD(d.value)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("monthlySpend")}</h3>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={expMonthlyBar}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700 }} />
-                      <YAxis hide />
-                      <Tooltip
-                        contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}
-                        formatter={(v: number) => [fmtUSD(v), t("totalSpend")]}
-                      />
-                      <Bar dataKey="total" radius={[4, 4, 0, 0]} barSize={28} fill="#a855f7" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-
-            {/* Filters */}
-            <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-3 shadow-sm">
-              <input
-                type="text"
-                placeholder={t("searchExpensePlaceholder")}
-                className="flex-1 min-w-[200px] px-4 py-2 text-sm outline-none bg-slate-50 rounded-xl border border-transparent focus:border-blue-100 transition-all"
-                value={expSearch}
-                onChange={e => { setExpSearch(e.target.value); setExpPage(1); }}
-              />
-              <select
-                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={expMonth}
-                onChange={e => { setExpMonth(e.target.value); setExpPage(1); }}
-              >
-                <option value="all">📅 {t("allMonths")}</option>
-                {expMonthOptions.map(m => <option key={m} value={m}>{fmtMonth(m).toUpperCase()}</option>)}
-              </select>
-              <select
-                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={expLoai}
-                onChange={e => { setExpLoai(e.target.value); setExpPage(1); }}
-              >
-                <option value="all">💰 {t("allTypes")}</option>
-                {expLoaiOptions.map(l => <option key={l} value={l}>{l.toUpperCase()}</option>)}
-              </select>
-              <select
-                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100"
-                value={expReg}
-                onChange={e => { setExpReg(e.target.value); setExpPage(1); }}
-              >
-                <option value="all">👤 {t("allRegistrants")}</option>
-                {expRegOptions.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
-              </select>
-              {(expSearch || expMonth !== "all" || expLoai !== "all" || expReg !== "all") && (
-                <button
-                  onClick={() => { setExpSearch(""); setExpMonth("all"); setExpLoai("all"); setExpReg("all"); setExpPage(1); }}
-                  className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
-                >
-                  ✕ {t("clear")}
-                </button>
+                    </td>
+                    <td className="p-4" />
+                  </tr>
+                </tfoot>
               )}
-            </div>
-
-            {/* Expense Table */}
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-              <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-                <table className="w-full text-left table-fixed min-w-[1000px]">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <th className="p-4 w-[12%]">{t("thRegistrant")}</th>
-                      <th className="p-4 w-[14%]">{t("thType")}</th>
-                      <th className="p-4 w-[12%]">{t("thDate")}</th>
-                      <th className="p-4 w-[20%]">{t("thWebsite")}</th>
-                      <th className="p-4 w-[16%]">{t("thAdsCard")}</th>
-                      <th className="p-4 w-[10%] text-right">{t("thAmount")}</th>
-                      <th className="p-4 w-[16%]">{t("thBill")}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {expPaginated.map((e, i) => {
-                      const c = getExpColor(e.loaiChiPhi);
-                      return (
-                        <tr key={i} className="transition-all hover:bg-slate-50/60">
-                          <td className="p-4">
-                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg uppercase tracking-wider">
-                              {e.tenReg || "—"}
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            <span
-                              className="text-[10px] font-black px-2.5 py-1 rounded-full uppercase"
-                              style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}
-                            >
-                              {e.loaiChiPhi}
-                            </span>
-                          </td>
-                          <td className="p-4 text-[11px] text-slate-500 font-bold whitespace-nowrap">
-                            {e.ngayThanhToan || "—"}
-                          </td>
-                          <td className="p-4">
-                            <span className="text-sm font-bold text-slate-700 lowercase truncate block">
-                              {e.tenWeb || "—"}
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            <span className="text-[11px] font-bold text-slate-600 truncate block">
-                              {e.tenTheAds || "—"}
-                            </span>
-                          </td>
-                          <td className="p-4 text-right">
-                            <span className="text-sm font-black text-slate-900">
-                              {e.chiPhiUSDT > 0 ? (
-                                <span className="text-[11px] font-black text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-200">
-                                  {e.chiPhiUSDT} USDT
-                                </span>
-                              ) : /k$/i.test(e.chiPhiRaw) || e.chiPhiVND > 0 ? (
-                                <span className="text-[11px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                                  {e.chiPhiVND > 0 ? `${e.chiPhiVND.toLocaleString("vi-VN")} VND` : e.chiPhiRaw}
-                                </span>
-                              ) : (
-                                fmtUSD(e.chiPhiUSD || parseFloat(e.chiPhiRaw.replace(/[^0-9.-]/g, "")) || 0)
-                              )}
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            {e.billChiPhi ? (
-                              <div className="flex flex-col gap-1 max-w-full">
-                                {e.billChiPhi
-                                  .split(",")
-                                  .map((link) => link.trim())
-                                  .filter(Boolean)
-                                  .map((cleanLink, index, arr) => (
-                                    <a
-                                      key={index}
-                                      href={cleanLink}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-[10px] font-black text-blue-500 hover:text-blue-700 underline underline-offset-2 truncate block"
-                                      title={cleanLink}
-                                    >
-                                      {arr.length > 1 ? `${t("viewBill")} #${index + 1} ↗` : `${t("viewBill")} ↗`}
-                                    </a>
-                                  ))}
-                              </div>
-                            ) : (
-                              <span className="text-slate-300 text-[11px]">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {expPaginated.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="text-center p-14 text-sm font-medium text-slate-400">
-                          {t("noExpenseRecordsFound")}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <Pagination currentPage={expPage} totalItems={expZoneB.length} itemsPerPage={ITEMS} onPageChange={setExpPage} />
-            </div>
-          </>
-        )}
+            </table>
+          </div>
+          <Pagination currentPage={page} totalItems={filtered.length} itemsPerPage={ITEMS} onPageChange={setPage} />
+        </div>
 
       </div>
     </div>
   );
 }
 
-// ─── Route ────────────────────────────────────────────────────────────────────
-
 export const Route = createFileRoute("/invoices")({
-  component: DomainManagerPage,
+  component: ChiPhiPage,
 });

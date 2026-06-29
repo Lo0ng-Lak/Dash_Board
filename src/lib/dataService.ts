@@ -1,9 +1,8 @@
 import Papa from "papaparse";
-import { DEFAULT_SHEET_LINKS } from "./sheetConfig";
+import { DEFAULT_SHEET_LINKS, INFO_WEB_SHEET_ID, REG_KPI_SHEETS, VE_BO_SHEET_ID, WEB_SHIELD_SHEETS } from "./sheetConfig";
 
 const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD ?? DEFAULT_SHEET_LINKS.REBUILD;
 const LINK_SHOPIFY = import.meta.env.VITE_LINK_TAB_SHOPIFY ?? DEFAULT_SHEET_LINKS.SHOPIFY;
-const LINK_GMC_VE = import.meta.env.VITE_LINK_TAB_GMC_VE ?? DEFAULT_SHEET_LINKS.GMC_VE;
 const LINK_GMC_REG = import.meta.env.VITE_LINK_TAB_GMC_REG ?? DEFAULT_SHEET_LINKS.GMC_REG;
 const LINK_INVOICES_GMC = import.meta.env.VITE_LINK_INVOICES_GMC ?? DEFAULT_SHEET_LINKS.INVOICES;
 const LINK_INFO_BO = import.meta.env.VITE_LINK_TAB_INFO_BO ?? DEFAULT_SHEET_LINKS.INFO_BO;
@@ -11,7 +10,7 @@ const LINK_INFO_BO = import.meta.env.VITE_LINK_TAB_INFO_BO ?? DEFAULT_SHEET_LINK
 let cachedDataNew: DomainSheetData | null = null;
 let cachedData: any[] | null = null;
 let cachedAllData: any[] | null = null;
-let cachedGmcVeData: any[] | null = null;
+let cachedWebShieldData: WebShieldRecord[] | null = null;
 let cachedGmcRegData: any = null;
 let cachedInfoBoData: InfoBoSheetData | null = null;
 
@@ -28,6 +27,139 @@ export interface WebRecord {
     status: string;
 }
 
+export interface WebShieldRecord {
+    sheetId: string;
+    sheetName: string;
+    owner: string;
+    web: string;
+    rawWeb: string;
+    checkInfor: string;
+    email: string;
+    address: string;
+    cong: string;
+    tinhTrang: string;
+    dev: string;
+    webStatus: string;
+    ngay: string;
+    completedDate: string | null;
+    month: string | null;
+}
+
+const webShieldRowVal = (row: Record<string, string>, ...keys: string[]) => {
+    for (const key of keys) {
+        const exact = row[key];
+        if (exact != null && String(exact).trim()) return String(exact).trim();
+    }
+    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "");
+    for (const [k, v] of Object.entries(row)) {
+        if (keys.some((key) => norm(k) === norm(key)) && v != null && String(v).trim()) {
+            return String(v).trim();
+        }
+    }
+    return "";
+};
+
+const cleanWebShieldDomain = (raw: string): string => {
+    const line = raw.split(/\r?\n/)[0]?.trim() ?? "";
+    const stripped = line.replace(/^https?:\/\//i, "");
+    const match = stripped.match(/^([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,})/);
+    return (match ? match[1] : stripped.split(/\s+/)[0]).toLowerCase();
+};
+
+const parseWebShieldDate = (raw: string): string | null => {
+    const dmy = (raw ?? "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!dmy) return null;
+    return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+};
+
+const normalizeWebShieldDev = (raw: string): string => {
+    const d = raw.trim();
+    if (!d) return "";
+    if (/\d{1,2}\/\d{1,2}/.test(d)) return "";
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(d)) return "";
+    if (/thêm mail|kiểm|gấp/i.test(d) && !/^qa$/i.test(d)) return "";
+    if (d.length > 20) return "";
+
+    const alias: Record<string, string> = {
+        long: "Long",
+        duy: "Duy",
+        "qúy anh": "Quý Anh",
+        "quý anh": "Quý Anh",
+        "quy anh": "Quý Anh",
+    };
+    const key = d.toLowerCase().replace(/\s+/g, " ").trim();
+    if (alias[key]) return alias[key];
+    if (d.toUpperCase() === "LONG") return "Long";
+    if (d.toUpperCase() === "DUY") return "Duy";
+    return d;
+};
+
+const parseWebShieldRows = (
+    rows: Record<string, string>[],
+    sheetId: string,
+    sheetName: string,
+): WebShieldRecord[] => {
+    const ownerKey = Object.keys(rows[0] ?? {}).find((k) => k.trim() === "") ?? " ";
+    const records: WebShieldRecord[] = [];
+
+    for (const row of rows) {
+        const rawWeb = webShieldRowVal(row, "Web Shield", "Web");
+        if (!rawWeb) continue;
+
+        const web = cleanWebShieldDomain(rawWeb);
+        if (!web) continue;
+
+        const tinhTrang = webShieldRowVal(row, "tình trạng", "tinh trang");
+        const ngay = webShieldRowVal(row, "Ngày", "ngày");
+        const completedDate = parseWebShieldDate(ngay) ?? parseWebShieldDate(tinhTrang);
+        const dev = normalizeWebShieldDev(webShieldRowVal(row, "Dev", "dev"));
+
+        records.push({
+            sheetId,
+            sheetName,
+            owner: (row[ownerKey] ?? "").trim(),
+            web,
+            rawWeb,
+            checkInfor: webShieldRowVal(row, "Check Infor"),
+            email: webShieldRowVal(row, "Email"),
+            address: webShieldRowVal(row, "Địa CHỉ", "Địa CHỈ", "Dia CHI"),
+            cong: webShieldRowVal(row, "Cổng", "Công"),
+            tinhTrang,
+            dev,
+            webStatus: webShieldRowVal(row, "Trạng thái web", "Trang thai web"),
+            ngay,
+            completedDate,
+            month: completedDate ? completedDate.slice(0, 7) : null,
+        });
+    }
+
+    return records;
+};
+
+export const getWebShieldData = async (forceRefresh = false): Promise<WebShieldRecord[]> => {
+    if (cachedWebShieldData && !forceRefresh) {
+        return cachedWebShieldData;
+    }
+
+    try {
+        const timestamp = new Date().getTime();
+        const batches = await Promise.all(
+            WEB_SHIELD_SHEETS.map(async (sheet) => {
+                const baseUrl = `https://docs.google.com/spreadsheets/d/e/${INFO_WEB_SHEET_ID}/pub?output=csv&gid=${sheet.gid}`;
+                const separator = baseUrl.includes("?") ? "&" : "?";
+                const csv = await fetch(`${baseUrl}${separator}t=${timestamp}`, { cache: "no-store" }).then((r) => r.text());
+                const rows = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true }).data;
+                return parseWebShieldRows(rows, sheet.id, sheet.name);
+            }),
+        );
+
+        cachedWebShieldData = batches.flat();
+        return cachedWebShieldData;
+    } catch (error) {
+        console.error("Web Shield fetch error:", error);
+        return [];
+    }
+};
 
 export const getAllDataWeb = async (forceRefresh = false): Promise<WebRecord[]> => {
     if (cachedAllData && !forceRefresh) {
@@ -150,42 +282,6 @@ export const getLatestWebData = async (forceRefresh = false) => {
 };
 
 
-export const getGMCVeData = async (forceRefresh = false) => {
-    if (cachedGmcVeData && !forceRefresh) return cachedGmcVeData;
-
-    try {
-        const timestamp = new Date().getTime();
-        const separator = LINK_GMC_VE.includes('?') ? '&' : '?';
-
-        const res = await fetch(`${LINK_GMC_VE}${separator}t=${timestamp}`).then(r => r.text());
-
-        // Parse data from new GMC tab
-        const rows = Papa.parse(res, { header: true, skipEmptyLines: true }).data;
-
-
-        const formattedData = rows.map((r: any) => ({
-            proxy: (r["Proxy"] || "").trim(),
-            proxyExpiry: r["Hạn Proxy Phú"] || "—",
-            twoFA: r["2FA"] || "—",
-            domain: (r["WEB"] || "").trim(),
-            dateGMC: r["Ngày về GMC"] || "—",
-            regType: r["Loại đăng kí"] || "—",
-            webType: r["Loại web"] || "—",
-            status: r["Tình Trạng Sus"] || "Chưa Sus",
-            dev: r["DEV"] || "—",
-            adsDate: r["Ngày chạy Ads"] || "—",
-            cost: r["Chi Phí"] || "0",
-            note: r["Note"] || ""
-        }));
-
-        cachedGmcVeData = formattedData;
-        return formattedData;
-    } catch (error) {
-        console.error("GMC VE Fetch error:", error);
-        return [];
-    }
-};
-
 export const getGMCRegData = async (forceRefresh = false) => {
     if (cachedGmcRegData && !forceRefresh) return cachedGmcRegData;
 
@@ -195,19 +291,23 @@ export const getGMCRegData = async (forceRefresh = false) => {
         const res = await fetch(`${LINK_GMC_REG}${separator}t=${timestamp}`).then(r => r.text());
         const rows = Papa.parse(res, { header: true, skipEmptyLines: true }).data;
 
-        // 1. CHUẨN HÓA DỮ LIỆU TỪ CSV
         const formattedData = rows.map((r: any) => ({
             proxy: (r["Proxy"] || "").trim(),
             proxyExpiry: r["Hạn Proxy"] || r["Hạn Proxy Phú"] || "—",
             twoFA: r["2FA"] || "—",
             domain: (r["WEB"] || "").trim(),
             dateGMC: r["Ngày về GMC"] || r["Ngày Reg GMC"] || "—",
+            reportDateGMC: r["Báo cáo ngày về"] || "—",
             webType: r["Loại web"] || "—",
             status: r["Tình Trạng Sus"] || "Xanh",
             dev: (r["DEV"] || r["Người Reg"] || "").trim(),
             adsDate: r["Ngày chạy Ads"] || "—",
+            linkAdsEgead: r["Link ads vs egead"] || "—",
+            dateSus: r["Ngày Sus"] || "—",
+            reportDateSus: r["Báo cáo ngày sus"] || "—",
             cost: r["Chi Phí"] || "0",
-            note: r["Note"] || ""
+            daysGreen: r["Số ngày GMC XANH"] || "—",
+            note: r["Note"] || "",
         }));
 
         const validData = formattedData.filter((item: any) => item.domain !== "");
@@ -215,7 +315,7 @@ export const getGMCRegData = async (forceRefresh = false) => {
         cachedGmcRegData = validData;
         return validData;
     } catch (error) {
-        console.error("GMC REG Fetch error:", error);
+        console.error("GMC REG (KPI TỔNG REG) fetch error:", error);
         return [];
     }
 };
@@ -255,11 +355,9 @@ export interface DomainSheetData {
     expenses: ExpenseRecord[];
 }
 
-// ─── Cache ────────────────────────────────────────────────────────────────────
-
-
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+let cachedChiPhiExpenses: ExpenseRecord[] | null = null;
+let cachedShopifyData: ShopifyRecord[] | null = null;
+let cachedRegKpiData: RegKpiRecord[] | null = null;
 
 const cleanCell = (val: string | undefined) =>
     (val ?? "").normalize("NFC").replace(/[\u00A0\uFEFF\u200B"'\r]/g, "").trim();
@@ -509,6 +607,237 @@ export const getDomainSheetData = async (forceRefresh = false): Promise<DomainSh
     } catch (err) {
         console.error("getDomainSheetData error:", err);
         return { domains: [], expenses: [] };
+    }
+};
+
+/** Chỉ lấy bảng chi phí bên phải (cột I–O) tab Chi Phí GMC */
+export const getChiPhiExpenses = async (forceRefresh = false): Promise<ExpenseRecord[]> => {
+    if (cachedChiPhiExpenses && !forceRefresh) return cachedChiPhiExpenses;
+
+    try {
+        const ts = Date.now();
+        const sep = LINK_INVOICES_GMC.includes("?") ? "&" : "?";
+        const text = await fetch(`${LINK_INVOICES_GMC}${sep}t=${ts}`, { cache: "no-store" }).then((r) => r.text());
+        const rows = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true }).data;
+
+        const expenses: ExpenseRecord[] = [];
+        for (const row of rows) {
+            const loaiChiPhi = cleanCell(row["Tên chi phí"]);
+            const registrant = cleanCell(row["Tên Reg"]);
+            const rawAmount = cleanCell(row["Chi phí (USD)"]);
+            const ngayTT = cleanCell(row["Ngày thanh toán"]);
+
+            if (!loaiChiPhi || !registrant || !rawAmount) continue;
+
+            expenses.push({
+                tenReg: registrant,
+                loaiChiPhi,
+                ngayThanhToan: ngayTT,
+                tenWeb: cleanCell(row["Tên web"]),
+                tenTheAds: cleanCell(row["Tên thẻ ads"]),
+                chiPhiUSD: parseUSD(rawAmount),
+                chiPhiVND: parseVND(rawAmount),
+                chiPhiUSDT: parseUSDT(rawAmount),
+                chiPhiRaw: rawAmount,
+                billChiPhi: cleanCell(row["Bill chi phí"]),
+                month: parseMonth(ngayTT),
+            });
+        }
+
+        cachedChiPhiExpenses = expenses;
+        return expenses;
+    } catch (err) {
+        console.error("getChiPhiExpenses error:", err);
+        return [];
+    }
+};
+
+// ─── Shopify (tab Shopify — New Infor Web) ───────────────────────────────────
+
+export interface ShopifyRecord {
+    nguoiReg: string;
+    web: string;
+    ngayDangKy: string;
+    ngayHetHan: string;
+    webHuy: string;
+    thayWebhooks: string;
+    the: string;
+    tkTrendsi: string;
+    regDate: string | null;
+    expiryDate: string | null;
+    regMonth: string | null;
+    daysLeft: number | null;
+    isCanceled: boolean;
+}
+
+const shopifyRowVal = (row: Record<string, string>, ...keys: string[]) => {
+    for (const key of keys) {
+        const exact = row[key];
+        if (exact != null && String(exact).trim()) return cleanCell(String(exact));
+    }
+    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ");
+    for (const [k, v] of Object.entries(row)) {
+        if (keys.some((key) => norm(k) === norm(key)) && v != null && String(v).trim()) {
+            return cleanCell(String(v));
+        }
+    }
+    return "";
+};
+
+const parseShopifyDateDMY = (raw: string): string | null => {
+    const dmy = (raw ?? "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!dmy) return null;
+    return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+};
+
+const shopifyDaysLeft = (isoDate: string | null): number | null => {
+    if (!isoDate) return null;
+    const target = new Date(`${isoDate}T00:00:00`);
+    if (isNaN(target.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+export const getShopifyData = async (forceRefresh = false): Promise<ShopifyRecord[]> => {
+    if (cachedShopifyData && !forceRefresh) return cachedShopifyData;
+
+    try {
+        const ts = Date.now();
+        const sep = LINK_SHOPIFY.includes("?") ? "&" : "?";
+        const text = await fetch(`${LINK_SHOPIFY}${sep}t=${ts}`, { cache: "no-store" }).then((r) => r.text());
+        const rows = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true }).data;
+
+        const map = new Map<string, Record<string, string>>();
+        for (const row of rows) {
+            const web = shopifyRowVal(row, "Web Shopify");
+            if (!web) continue;
+            map.set(web.toLowerCase(), row);
+        }
+
+        const records: ShopifyRecord[] = [...map.values()].map((row) => {
+            const ngayDangKy = shopifyRowVal(row, "Ngày Đăng kí", "Ngày đăng kí");
+            const ngayHetHan = shopifyRowVal(row, "Ngày hết hạn 1$", "Ngày hết hạn");
+            const webHuy = shopifyRowVal(row, "WEB Hủy reg mới");
+            const regDate = parseShopifyDateDMY(ngayDangKy);
+            const expiryDate = parseShopifyDateDMY(ngayHetHan);
+
+            return {
+                nguoiReg: shopifyRowVal(row, "Người Reg"),
+                web: shopifyRowVal(row, "Web Shopify"),
+                ngayDangKy,
+                ngayHetHan,
+                webHuy,
+                thayWebhooks: shopifyRowVal(row, "Thay webhooks"),
+                the: shopifyRowVal(row, "Thẻ"),
+                tkTrendsi: shopifyRowVal(row, "TK Trendsi"),
+                regDate,
+                expiryDate,
+                regMonth: regDate ? regDate.slice(0, 7) : null,
+                daysLeft: shopifyDaysLeft(expiryDate),
+                isCanceled: Boolean(webHuy),
+            };
+        });
+
+        cachedShopifyData = records;
+        return records;
+    } catch (err) {
+        console.error("getShopifyData error:", err);
+        return [];
+    }
+};
+
+// ─── KPI REG (tab Long, Thịnh, Quốc An, Chương, Bảo Hân) ───────────────────
+
+export interface RegKpiRecord {
+    ownerId: string;
+    ownerName: string;
+    webType: string;
+    domain: string;
+    dateRegGmc: string;
+    addCard: string;
+    verifyAds: string;
+    verifyAds2: string;
+    susStatus: string;
+    khang1Date: string;
+    ketQua1: string;
+    khang2Date: string;
+    ketQua2: string;
+    khang3Date: string;
+    ketQua3: string;
+    note: string;
+}
+
+const regKpiRowVal = (row: Record<string, unknown>, ...keys: string[]) => {
+    for (const key of keys) {
+        const val = row[key];
+        if (val !== undefined && val !== null && String(val).trim() !== "") {
+            return cleanCell(String(val));
+        }
+    }
+    const normalizedKeys = keys.map((k) => k.toLowerCase().replace(/\s+/g, " ").trim());
+    for (const [rawKey, val] of Object.entries(row)) {
+        const nk = rawKey.toLowerCase().replace(/\s+/g, " ").trim();
+        if (normalizedKeys.some((k) => nk === k || nk.includes(k))) {
+            const s = cleanCell(String(val ?? ""));
+            if (s) return s;
+        }
+    }
+    return "";
+};
+
+const parseRegKpiRow = (row: Record<string, unknown>, ownerId: string, ownerName: string): RegKpiRecord | null => {
+    const domain = regKpiRowVal(row, "WEB", "Web").toLowerCase().trim();
+    if (!domain) return null;
+
+    return {
+        ownerId,
+        ownerName,
+        webType: regKpiRowVal(row, "Loại web"),
+        domain,
+        dateRegGmc: regKpiRowVal(row, "Ngày Reg GMC", "Ngày về GMC"),
+        addCard: regKpiRowVal(row, "Đã Add Thẻ"),
+        verifyAds: regKpiRowVal(row, "Verify Ads"),
+        verifyAds2: regKpiRowVal(row, "Verify Ads 2"),
+        susStatus: regKpiRowVal(row, "Tình Trạng Sus", "Tình trạng Sus") || "—",
+        khang1Date: regKpiRowVal(row, "Kháng lần 1"),
+        ketQua1: regKpiRowVal(row, "Kết quả 1", "Kết quả"),
+        khang2Date: regKpiRowVal(row, "Kháng lần 2"),
+        ketQua2: regKpiRowVal(row, "Kết quả 2", "Kết quả lần 2"),
+        khang3Date: regKpiRowVal(row, "Kháng lần 3"),
+        ketQua3: regKpiRowVal(row, "Kết quả 3", "Kết quả lần 3"),
+        note: regKpiRowVal(row, "Note", "Note_1"),
+    };
+};
+
+export const getRegKpiData = async (forceRefresh = false): Promise<RegKpiRecord[]> => {
+    if (cachedRegKpiData && !forceRefresh) return cachedRegKpiData;
+
+    try {
+        const ts = Date.now();
+        const all: RegKpiRecord[] = [];
+
+        await Promise.all(
+            REG_KPI_SHEETS.map(async (sheet) => {
+                const url = `https://docs.google.com/spreadsheets/d/e/${VE_BO_SHEET_ID}/pub?output=csv&gid=${sheet.gid}&t=${ts}`;
+                const text = await fetch(url, { cache: "no-store" }).then((r) => r.text());
+                const rows = Papa.parse<Record<string, unknown>>(text, {
+                    header: true,
+                    skipEmptyLines: true,
+                }).data;
+
+                for (const row of rows) {
+                    const record = parseRegKpiRow(row, sheet.id, sheet.name);
+                    if (record) all.push(record);
+                }
+            }),
+        );
+
+        cachedRegKpiData = all;
+        return all;
+    } catch (err) {
+        console.error("getRegKpiData error:", err);
+        return [];
     }
 };
 

@@ -10,15 +10,16 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WordpressRouteImport } from './routes/wordpress'
+import { Route as WebShieldKpiRouteImport } from './routes/web-shield-kpi'
 import { Route as WebKpiRouteImport } from './routes/web-kpi'
 import { Route as ShopifyRouteImport } from './routes/shopify'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as RegKpiRouteImport } from './routes/reg-kpi'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as DomainsRouteImport } from './routes/domains'
-import { Route as DevsRouteImport } from './routes/devs'
 import { Route as DashInfoRouteImport } from './routes/dash-info'
 import { Route as CustomersRouteImport } from './routes/customers'
 import { Route as IndexRouteImport } from './routes/index'
@@ -26,6 +27,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const WordpressRoute = WordpressRouteImport.update({
   id: '/wordpress',
   path: '/wordpress',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebShieldKpiRoute = WebShieldKpiRouteImport.update({
+  id: '/web-shield-kpi',
+  path: '/web-shield-kpi',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WebKpiRoute = WebKpiRouteImport.update({
@@ -48,6 +54,11 @@ const ReportsRoute = ReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RegKpiRoute = RegKpiRouteImport.update({
+  id: '/reg-kpi',
+  path: '/reg-kpi',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
@@ -66,11 +77,6 @@ const InvoicesRoute = InvoicesRouteImport.update({
 const DomainsRoute = DomainsRouteImport.update({
   id: '/domains',
   path: '/domains',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DevsRoute = DevsRouteImport.update({
-  id: '/devs',
-  path: '/devs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashInfoRoute = DashInfoRouteImport.update({
@@ -93,30 +99,32 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/customers': typeof CustomersRoute
   '/dash-info': typeof DashInfoRoute
-  '/devs': typeof DevsRoute
   '/domains': typeof DomainsRoute
   '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
+  '/reg-kpi': typeof RegKpiRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
   '/web-kpi': typeof WebKpiRoute
+  '/web-shield-kpi': typeof WebShieldKpiRoute
   '/wordpress': typeof WordpressRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/customers': typeof CustomersRoute
   '/dash-info': typeof DashInfoRoute
-  '/devs': typeof DevsRoute
   '/domains': typeof DomainsRoute
   '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
+  '/reg-kpi': typeof RegKpiRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
   '/web-kpi': typeof WebKpiRoute
+  '/web-shield-kpi': typeof WebShieldKpiRoute
   '/wordpress': typeof WordpressRoute
 }
 export interface FileRoutesById {
@@ -124,15 +132,16 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/customers': typeof CustomersRoute
   '/dash-info': typeof DashInfoRoute
-  '/devs': typeof DevsRoute
   '/domains': typeof DomainsRoute
   '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
+  '/reg-kpi': typeof RegKpiRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
   '/web-kpi': typeof WebKpiRoute
+  '/web-shield-kpi': typeof WebShieldKpiRoute
   '/wordpress': typeof WordpressRoute
 }
 export interface FileRouteTypes {
@@ -141,45 +150,48 @@ export interface FileRouteTypes {
     | '/'
     | '/customers'
     | '/dash-info'
-    | '/devs'
     | '/domains'
     | '/invoices'
     | '/login'
     | '/profile'
+    | '/reg-kpi'
     | '/reports'
     | '/settings'
     | '/shopify'
     | '/web-kpi'
+    | '/web-shield-kpi'
     | '/wordpress'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/customers'
     | '/dash-info'
-    | '/devs'
     | '/domains'
     | '/invoices'
     | '/login'
     | '/profile'
+    | '/reg-kpi'
     | '/reports'
     | '/settings'
     | '/shopify'
     | '/web-kpi'
+    | '/web-shield-kpi'
     | '/wordpress'
   id:
     | '__root__'
     | '/'
     | '/customers'
     | '/dash-info'
-    | '/devs'
     | '/domains'
     | '/invoices'
     | '/login'
     | '/profile'
+    | '/reg-kpi'
     | '/reports'
     | '/settings'
     | '/shopify'
     | '/web-kpi'
+    | '/web-shield-kpi'
     | '/wordpress'
   fileRoutesById: FileRoutesById
 }
@@ -187,15 +199,16 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CustomersRoute: typeof CustomersRoute
   DashInfoRoute: typeof DashInfoRoute
-  DevsRoute: typeof DevsRoute
   DomainsRoute: typeof DomainsRoute
   InvoicesRoute: typeof InvoicesRoute
   LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
+  RegKpiRoute: typeof RegKpiRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   ShopifyRoute: typeof ShopifyRoute
   WebKpiRoute: typeof WebKpiRoute
+  WebShieldKpiRoute: typeof WebShieldKpiRoute
   WordpressRoute: typeof WordpressRoute
 }
 
@@ -206,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/wordpress'
       fullPath: '/wordpress'
       preLoaderRoute: typeof WordpressRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/web-shield-kpi': {
+      id: '/web-shield-kpi'
+      path: '/web-shield-kpi'
+      fullPath: '/web-shield-kpi'
+      preLoaderRoute: typeof WebShieldKpiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/web-kpi': {
@@ -236,6 +256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reg-kpi': {
+      id: '/reg-kpi'
+      path: '/reg-kpi'
+      fullPath: '/reg-kpi'
+      preLoaderRoute: typeof RegKpiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/profile': {
       id: '/profile'
       path: '/profile'
@@ -262,13 +289,6 @@ declare module '@tanstack/react-router' {
       path: '/domains'
       fullPath: '/domains'
       preLoaderRoute: typeof DomainsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/devs': {
-      id: '/devs'
-      path: '/devs'
-      fullPath: '/devs'
-      preLoaderRoute: typeof DevsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dash-info': {
@@ -299,15 +319,16 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CustomersRoute: CustomersRoute,
   DashInfoRoute: DashInfoRoute,
-  DevsRoute: DevsRoute,
   DomainsRoute: DomainsRoute,
   InvoicesRoute: InvoicesRoute,
   LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
+  RegKpiRoute: RegKpiRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   ShopifyRoute: ShopifyRoute,
   WebKpiRoute: WebKpiRoute,
+  WebShieldKpiRoute: WebShieldKpiRoute,
   WordpressRoute: WordpressRoute,
 }
 export const routeTree = rootRouteImport
