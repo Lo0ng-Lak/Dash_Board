@@ -3,7 +3,17 @@ import { DEFAULT_SHEET_LINKS, INFO_WEB_SHEET_ID, REG_KPI_SHEETS, VE_BO_SHEET_ID,
 
 const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD ?? DEFAULT_SHEET_LINKS.REBUILD;
 const LINK_SHOPIFY = import.meta.env.VITE_LINK_TAB_SHOPIFY ?? DEFAULT_SHEET_LINKS.SHOPIFY;
-const LINK_GMC_REG = import.meta.env.VITE_LINK_TAB_GMC_REG ?? DEFAULT_SHEET_LINKS.GMC_REG;
+/** Tab KPI TỔNG REG (gid 1734827021) — tránh env local ghi đè nhầm gid khác */
+const KPI_TONG_REG_GID = "1734827021";
+const resolveGmcRegLink = (): string => {
+    const env = import.meta.env.VITE_LINK_TAB_GMC_REG as string | undefined;
+    if (env?.includes(`gid=${KPI_TONG_REG_GID}`)) return env;
+    if (env && !env.includes(`gid=${KPI_TONG_REG_GID}`)) {
+        console.warn("[GMC REG] VITE_LINK_TAB_GMC_REG sai tab — dùng KPI TỔNG REG mặc định");
+    }
+    return DEFAULT_SHEET_LINKS.GMC_REG;
+};
+const LINK_GMC_REG = resolveGmcRegLink();
 const LINK_INVOICES_GMC = import.meta.env.VITE_LINK_INVOICES_GMC ?? DEFAULT_SHEET_LINKS.INVOICES;
 const LINK_INFO_BO = import.meta.env.VITE_LINK_TAB_INFO_BO ?? DEFAULT_SHEET_LINKS.INFO_BO;
 
@@ -282,35 +292,58 @@ export const getLatestWebData = async (forceRefresh = false) => {
 };
 
 
+const gmcRegRowVal = (row: Record<string, unknown>, ...keys: string[]) => {
+    for (const key of keys) {
+        const val = row[key];
+        if (val !== undefined && val !== null && String(val).trim() !== "") {
+            return cleanCell(String(val));
+        }
+    }
+    const normalizedKeys = keys.map((k) => k.toLowerCase().replace(/\s+/g, " ").trim());
+    for (const [rawKey, val] of Object.entries(row)) {
+        const nk = rawKey.toLowerCase().replace(/\s+/g, " ").trim();
+        if (normalizedKeys.some((k) => nk === k || nk.includes(k))) {
+            const s = cleanCell(String(val ?? ""));
+            if (s) return s;
+        }
+    }
+    return "";
+};
+
+export const clearGmcRegCache = () => {
+    cachedGmcRegData = null;
+};
+
 export const getGMCRegData = async (forceRefresh = false) => {
     if (cachedGmcRegData && !forceRefresh) return cachedGmcRegData;
 
     try {
         const timestamp = new Date().getTime();
-        const separator = LINK_GMC_REG.includes('?') ? '&' : '?';
-        const res = await fetch(`${LINK_GMC_REG}${separator}t=${timestamp}`).then(r => r.text());
-        const rows = Papa.parse(res, { header: true, skipEmptyLines: true }).data;
+        const separator = LINK_GMC_REG.includes("?") ? "&" : "?";
+        const res = await fetch(`${LINK_GMC_REG}${separator}t=${timestamp}`, { cache: "no-store" }).then((r) => r.text());
+        const rows = Papa.parse<Record<string, unknown>>(res, { header: true, skipEmptyLines: true }).data;
 
-        const formattedData = rows.map((r: any) => ({
-            proxy: (r["Proxy"] || "").trim(),
-            proxyExpiry: r["Hạn Proxy"] || r["Hạn Proxy Phú"] || "—",
-            twoFA: r["2FA"] || "—",
-            domain: (r["WEB"] || "").trim(),
-            dateGMC: r["Ngày về GMC"] || r["Ngày Reg GMC"] || "—",
-            reportDateGMC: r["Báo cáo ngày về"] || "—",
-            webType: r["Loại web"] || "—",
-            status: r["Tình Trạng Sus"] || "Xanh",
-            dev: (r["DEV"] || r["Người Reg"] || "").trim(),
-            adsDate: r["Ngày chạy Ads"] || "—",
-            linkAdsEgead: r["Link ads vs egead"] || "—",
-            dateSus: r["Ngày Sus"] || "—",
-            reportDateSus: r["Báo cáo ngày sus"] || "—",
-            cost: r["Chi Phí"] || "0",
-            daysGreen: r["Số ngày GMC XANH"] || "—",
-            note: r["Note"] || "",
+        const formattedData = rows.map((r) => ({
+            proxy: gmcRegRowVal(r, "Proxy"),
+            proxyExpiry: gmcRegRowVal(r, "Hạn Proxy", "Hạn Proxy Phú") || "—",
+            twoFA: gmcRegRowVal(r, "2FA") || "—",
+            domain: gmcRegRowVal(r, "WEB", "Web").toLowerCase().trim(),
+            dateGMC: gmcRegRowVal(r, "Ngày về GMC", "Ngày Reg GMC") || "—",
+            reportDateGMC: gmcRegRowVal(r, "Báo cáo ngày về") || "—",
+            webType: gmcRegRowVal(r, "Loại web") || "—",
+            status: gmcRegRowVal(r, "Tình Trạng Sus", "Tình trạng Sus") || "Xanh",
+            dev: gmcRegRowVal(r, "DEV", "Người Reg", "Dev"),
+            adsDate: gmcRegRowVal(r, "Ngày chạy Ads") || "—",
+            linkAdsEgead: gmcRegRowVal(r, "Link ads vs egead", "Báo cáo ngày link ads vs egead") || "—",
+            dateSus: gmcRegRowVal(r, "Ngày Sus") || "—",
+            reportDateSus: gmcRegRowVal(r, "Báo cáo ngày sus", "Báo cáo ngày Sus") || "—",
+            cost: gmcRegRowVal(r, "Chi Phí", "Chi phí") || "0",
+            daysGreen: gmcRegRowVal(r, "Số ngày GMC XANH", "Số ngày GMC xanh") || "—",
+            thayCong: gmcRegRowVal(r, "Thay Cổng", "Thay cổng") || "—",
+            note: gmcRegRowVal(r, "Note") || "",
         }));
 
-        const validData = formattedData.filter((item: any) => item.domain !== "");
+        const validData = formattedData.filter((item) => item.domain !== "");
 
         cachedGmcRegData = validData;
         return validData;

@@ -101,8 +101,9 @@ function GMCPremiumDashboard() {
   const isSuspended = (status: string) => {
     if (!status) return false;
     const s = status.toLowerCase().trim();
+    if (!s || s === "—") return false;
     if (s === "xanh" || s.includes("chưa sus")) return false;
-    return s.includes("đã sus") || s === "suspended" || s === "sus";
+    return s.includes("sus") || s === "die" || s.includes("đã sus") || s.includes("về sus");
   };
 
   // Chuẩn hóa chuỗi tiền tệ từ "10,5" thành số thực 10.5
@@ -538,10 +539,10 @@ function GMCPremiumDashboard() {
                       </td>
 
                       <td className="p-4">
-                        <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase ${itemIsSus ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-500"
+                        <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase max-w-full ${itemIsSus ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-600"
                           }`}>
-                          <span className={`w-1 h-1 rounded-full ${itemIsSus ? "bg-red-500" : "bg-emerald-500"}`} />
-                          {itemIsSus ? t("suspended") : t("active")}
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${itemIsSus ? "bg-red-500" : "bg-emerald-500"}`} />
+                          <span className="truncate">{item.status || (itemIsSus ? t("suspended") : t("active"))}</span>
                         </div>
                       </td>
 

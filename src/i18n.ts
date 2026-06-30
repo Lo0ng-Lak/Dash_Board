@@ -168,7 +168,7 @@ const resources = {
             // --- Trang Quản lý Đăng ký GMC (GMC REG List) ---
             gmcRegManagement: "GMC KHÁNG Management",
             devRegManagement: "GMC Resistance Dashboard",
-            gmcSystemDesc: "Track and manage the status of GMC account initialization.",
+            gmcSystemDesc: "Data from KPI TỔNG REG tab (Về Bờ Ăn Tết sheet).",
             loadingSystemData: "Loading system data...",
 
             totalRegGmc: "Total REG GMC",
@@ -514,7 +514,7 @@ const resources = {
             // --- Trang Quản lý Đăng ký GMC (GMC REG List) ---
             gmcRegManagement: "GMC KHÁNG",
             devRegManagement: "Quản lý DEV GMC",
-            gmcSystemDesc: "Theo dõi và quản lý trạng thái khởi tạo tài khoản GMC.",
+            gmcSystemDesc: "Dữ liệu tab KPI TỔNG REG — sheet Về Bờ Ăn Tết.",
             loadingSystemData: "Đang tải dữ liệu hệ thống...",
 
             totalRegGmc: "Tổng REG GMC",
