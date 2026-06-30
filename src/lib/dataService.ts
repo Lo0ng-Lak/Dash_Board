@@ -310,6 +310,25 @@ const gmcRegRowVal = (row: Record<string, unknown>, ...keys: string[]) => {
     return "";
 };
 
+/** Chỉ lấy đúng cột WEB — không fuzzy (tránh nhầm "Loại web" → shopify) */
+const gmcWebVal = (row: Record<string, unknown>): string => {
+    for (const key of ["WEB", "Web"]) {
+        const val = row[key];
+        if (val !== undefined && val !== null && String(val).trim() !== "") {
+            return cleanCell(String(val)).toLowerCase();
+        }
+    }
+    return "";
+};
+
+const WEB_TYPE_WORDS = new Set(["shopify", "wordpress", "woocommerce", "unknown", "web"]);
+
+export const isValidGmcWebDomain = (domain: string): boolean => {
+    const d = domain.toLowerCase().trim();
+    if (!d || WEB_TYPE_WORDS.has(d)) return false;
+    return d.includes(".");
+};
+
 export const clearGmcRegCache = () => {
     cachedGmcRegData = null;
 };
@@ -327,7 +346,7 @@ export const getGMCRegData = async (forceRefresh = false) => {
             proxy: gmcRegRowVal(r, "Proxy"),
             proxyExpiry: gmcRegRowVal(r, "Hạn Proxy", "Hạn Proxy Phú") || "—",
             twoFA: gmcRegRowVal(r, "2FA") || "—",
-            domain: gmcRegRowVal(r, "WEB", "Web").toLowerCase().trim(),
+            domain: gmcWebVal(r),
             dateGMC: gmcRegRowVal(r, "Ngày về GMC", "Ngày Reg GMC") || "—",
             reportDateGMC: gmcRegRowVal(r, "Báo cáo ngày về") || "—",
             webType: gmcRegRowVal(r, "Loại web") || "—",
@@ -343,7 +362,7 @@ export const getGMCRegData = async (forceRefresh = false) => {
             note: gmcRegRowVal(r, "Note") || "",
         }));
 
-        const validData = formattedData.filter((item) => item.domain !== "");
+        const validData = formattedData.filter((item) => isValidGmcWebDomain(item.domain));
 
         cachedGmcRegData = validData;
         return validData;

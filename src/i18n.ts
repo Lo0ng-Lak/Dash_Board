@@ -172,7 +172,7 @@ const resources = {
             loadingSystemData: "Loading system data...",
 
             totalRegGmc: "Total REG GMC",
-            totalRegGmcDesc: "Data from KPI TỔNG REG sheet (Về Bờ Ăn Tết)",
+            totalRegGmcDesc: "Count by WEB column only (KPI TỔNG REG — Về Bờ Ăn Tết)",
 
             // Thẻ thống kê (Stats Cards)
             totalFilteredRows: "Total Domain",
@@ -518,7 +518,7 @@ const resources = {
             loadingSystemData: "Đang tải dữ liệu hệ thống...",
 
             totalRegGmc: "Tổng REG GMC",
-            totalRegGmcDesc: "Dữ liệu từ sheet KPI TỔNG REG (Về Bờ Ăn Tết)",
+            totalRegGmcDesc: "Chỉ đếm dòng có cột WEB (tab KPI TỔNG REG — Về Bờ Ăn Tết)",
 
             // Thẻ thống kê (Stats Cards)
             totalFilteredRows: "Tổng tên miền",
