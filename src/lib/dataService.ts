@@ -321,12 +321,18 @@ const gmcWebVal = (row: Record<string, unknown>): string => {
     return "";
 };
 
-const WEB_TYPE_WORDS = new Set(["shopify", "wordpress", "woocommerce", "unknown", "web"]);
+const PLATFORM_WORDS = new Set(["shopify", "wordpress", "woocommerce", "unknown", "web", "n/a", "na"]);
 
 export const isValidGmcWebDomain = (domain: string): boolean => {
-    const d = domain.toLowerCase().trim();
-    if (!d || WEB_TYPE_WORDS.has(d)) return false;
-    return d.includes(".");
+    const d = domain
+        .toLowerCase()
+        .trim()
+        .replace(/^https?:\/\//, "")
+        .replace(/^www\./, "")
+        .split("/")[0];
+    if (!d || PLATFORM_WORDS.has(d)) return false;
+    if (!d.includes(".")) return false;
+    return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(d);
 };
 
 export const clearGmcRegCache = () => {

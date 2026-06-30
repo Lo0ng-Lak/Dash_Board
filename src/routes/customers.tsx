@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next"; // 🌐 Import hook dịch thuật
-import { getGMCRegData } from "../lib/dataService";
+import { getGMCRegData, isValidGmcWebDomain } from "../lib/dataService";
 import { Pagination } from "../components/pagination";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie
@@ -92,10 +92,15 @@ function GMCPremiumDashboard() {
     refetchInterval: 30000,
   });
 
+  const regData = useMemo(
+    () => rawRegData.filter((item) => isValidGmcWebDomain(item.domain)),
+    [rawRegData],
+  );
+
   // Reverse array of original data (new records first)
   const orderedFullData = useMemo(() => {
-    return [...rawRegData].reverse();
-  }, [rawRegData]);
+    return [...regData].reverse();
+  }, [regData]);
 
   // Helper function để check trạng thái thiết bị linh hoạt
   const isSuspended = (status: string) => {
@@ -149,14 +154,14 @@ function GMCPremiumDashboard() {
   // ZONE 0: GLOBAL STATS (toàn bộ dữ liệu REG GMC)
   // ==========================================
   const globalStats = useMemo(() => {
-    const totalAcc = rawRegData.length;
-    const totalDomains = new Set(rawRegData.map((item) => item.domain.toLowerCase().trim())).size;
-    const totalLive = rawRegData.filter((item) => !isSuspended(item.status)).length;
-    const totalSus = rawRegData.filter((item) => isSuspended(item.status)).length;
-    const totalCost = rawRegData.reduce((sum, item) => sum + parseCost(item.cost), 0);
+    const totalAcc = regData.length;
+    const totalDomains = new Set(regData.map((item) => item.domain.toLowerCase().trim())).size;
+    const totalLive = regData.filter((item) => !isSuspended(item.status)).length;
+    const totalSus = regData.filter((item) => isSuspended(item.status)).length;
+    const totalCost = regData.reduce((sum, item) => sum + parseCost(item.cost), 0);
 
     return { totalAcc, totalDomains, totalLive, totalSus, totalCost };
-  }, [rawRegData]);
+  }, [regData]);
 
   // ==========================================
   // ZONE 1: FILTER BY DROPDOWN CATEGORY (Stats + Charts)
@@ -248,7 +253,7 @@ function GMCPremiumDashboard() {
   // Extract lists for dropdown filters
   const uniqueMonthsOptions = useMemo(() => {
     const monthsSet = new Set<string>();
-    rawRegData.forEach((item: GMCRegItem) => {
+    regData.forEach((item: GMCRegItem) => {
       if (item.dateGMC && item.dateGMC !== "—") {
         const [_, month, year] = item.dateGMC.split("/");
         monthsSet.add(`${month}/${year}`);
@@ -259,19 +264,19 @@ function GMCPremiumDashboard() {
       const [m2, y2] = b.split("/").map(Number);
       return y2 - y1 || m2 - m1;
     });
-  }, [rawRegData]);
+  }, [regData]);
 
   const uniqueWebTypesOptions = useMemo(() => {
     const typesSet = new Set<string>();
-    rawRegData.forEach((item: GMCRegItem) => item.webType && item.webType !== "—" && typesSet.add(item.webType));
+    regData.forEach((item: GMCRegItem) => item.webType && item.webType !== "—" && typesSet.add(item.webType));
     return Array.from(typesSet);
-  }, [rawRegData]);
+  }, [regData]);
 
   const uniqueDevsOptions = useMemo(() => {
     const devsSet = new Set<string>();
-    rawRegData.forEach((item: GMCRegItem) => item.dev && devsSet.add(item.dev));
+    regData.forEach((item: GMCRegItem) => item.dev && devsSet.add(item.dev));
     return Array.from(devsSet);
-  }, [rawRegData]);
+  }, [regData]);
 
   // Paginated data to render on table
   const paginatedTableData = useMemo(() => {
