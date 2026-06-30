@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 import { getRegKpiData, RegKpiRecord } from "@/lib/dataService";
 import { REG_KPI_SHEETS } from "@/lib/sheetConfig";
 import { Pagination } from "@/components/pagination";
+import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
+import { aggregateWeekRows, getCurrentMonthKey, parseDmyDate } from "@/lib/kpiWeek";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
 } from "recharts";
@@ -33,6 +35,8 @@ const parseRegMonth = (dateStr: string): string | null => {
   if (!dateStr || dateStr === "—") return null;
   const dmy = dateStr.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!dmy) return null;
+  const month = Number(dmy[2]);
+  if (month < 1 || month > 12) return null;
   return `${dmy[3]}-${dmy[2].padStart(2, "0")}`;
 };
 
@@ -46,6 +50,7 @@ function RegKpiPage() {
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
+  const [activeKpiMonth, setActiveKpiMonth] = useState(getCurrentMonthKey);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
@@ -91,19 +96,13 @@ function RegKpiPage() {
       .map(([month, count]) => ({ month, label: fmtMonthKey(month), count }));
   }, [ownerPool]);
 
-  const monthlyByOwner = useMemo(() => {
-    const months = [...new Set(records.map((r) => parseRegMonth(r.dateRegGmc)).filter(Boolean) as string[])].sort();
-    return months.map((month) => {
-      const row: Record<string, string | number> = { label: fmtMonthKey(month) };
-      REG_KPI_SHEETS.forEach((s) => {
-        row[s.name] = records.filter(
-          (r) => r.ownerId === s.id && parseRegMonth(r.dateRegGmc) === month,
-        ).length;
-      });
-      row.total = REG_KPI_SHEETS.reduce((sum, s) => sum + (Number(row[s.name]) || 0), 0);
-      return row;
-    });
-  }, [records]);
+  const weeklyRows = useMemo(() => aggregateWeekRows(
+    ownerPool.map((r) => ({
+      date: parseDmyDate(r.dateRegGmc),
+      group: r.ownerName,
+      item: r.domain,
+    })),
+  ), [ownerPool]);
 
   const stats = useMemo(() => {
     const pool = ownerPool;
@@ -116,15 +115,6 @@ function RegKpiPage() {
       isPass(r.ketQua1) || isPass(r.ketQua2) || isPass(r.ketQua3)).length;
     return { total, live, sus, khangFail, khangPass };
   }, [ownerPool]);
-
-  const currentMonthCount = useMemo(() => {
-    if (monthFilter !== "all") {
-      return monthlyReg.find((m) => m.month === monthFilter)?.count ?? 0;
-    }
-    const now = new Date();
-    const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    return monthlyReg.find((m) => m.month === key)?.count ?? 0;
-  }, [monthFilter, monthlyReg]);
 
   const byOwnerBar = useMemo(() => {
     return REG_KPI_SHEETS.map((s) => ({
@@ -214,79 +204,16 @@ function RegKpiPage() {
           </div>
         </div>
 
-        {/* REG theo tháng */}
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-            <div>
-              <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest">{t("monthlyRegTitle")}</h3>
-              <p className="text-sm text-slate-500 mt-1">{t("monthlyRegDesc")}</p>
-            </div>
-            {monthFilter !== "all" ? (
-              <div className="bg-indigo-50 border border-indigo-100 px-4 py-2 rounded-xl">
-                <p className="text-[9px] font-black uppercase text-indigo-400">{fmtMonthKey(monthFilter)}</p>
-                <p className="text-2xl font-black text-indigo-600">{currentMonthCount} <span className="text-sm font-bold">{t("webs")}</span></p>
-              </div>
-            ) : (
-              <div className="bg-slate-50 border border-slate-100 px-4 py-2 rounded-xl">
-                <p className="text-[9px] font-black uppercase text-slate-400">{t("thisMonth")}</p>
-                <p className="text-2xl font-black text-slate-800">{currentMonthCount} <span className="text-sm font-bold">{t("webs")}</span></p>
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            {monthlyReg.map((m) => (
-              <button
-                key={m.month}
-                type="button"
-                onClick={() => setMonthFilter(monthFilter === m.month ? "all" : m.month)}
-                className={`p-3 rounded-xl border text-left transition-all hover:shadow-md ${monthFilter === m.month
-                  ? "bg-indigo-600 border-indigo-600 text-white shadow-md"
-                  : "bg-slate-50 border-slate-100 hover:border-indigo-200"
-                  }`}
-              >
-                <p className={`text-[9px] font-black uppercase ${monthFilter === m.month ? "text-indigo-200" : "text-slate-400"}`}>
-                  {m.label}
-                </p>
-                <p className={`text-xl font-black mt-1 ${monthFilter === m.month ? "text-white" : "text-slate-800"}`}>
-                  {m.count}
-                </p>
-                <p className={`text-[9px] font-bold uppercase mt-0.5 ${monthFilter === m.month ? "text-indigo-200" : "text-slate-400"}`}>
-                  {t("webs")}
-                </p>
-              </button>
-            ))}
-          </div>
-
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyReg}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-                <Tooltip formatter={(v: number) => [v, t("websRegged")]} />
-                <Bar dataKey="count" name={t("websRegged")} fill="#6366f1" radius={[4, 4, 0, 0]} barSize={32} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {ownerFilter === "all" && monthlyByOwner.length > 0 && (
-            <div className="h-56 pt-2 border-t border-slate-100">
-              <p className="text-[9px] font-black uppercase text-slate-400 mb-4 tracking-widest">{t("monthlyRegByOwner")}</p>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyByOwner}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
-                  <YAxis allowDecimals={false} hide />
-                  <Tooltip />
-                  {REG_KPI_SHEETS.map((s) => (
-                    <Bar key={s.id} dataKey={s.name} stackId="a" fill={OWNER_COLORS[s.id]} barSize={28} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
+        <MonthWeeklyKpiBlock
+          monthlyData={monthlyReg}
+          weeklyRows={weeklyRows}
+          activeMonth={activeKpiMonth}
+          onMonthChange={(m) => { setActiveKpiMonth(m); setMonthFilter(m); }}
+          groupColumnLabel={t("owner", "Người")}
+          title={t("monthlyRegTitle")}
+          subtitle={t("monthlyKpiNote")}
+          emptyHint={t("weeklyKpiRegHint")}
+        />
 
         {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

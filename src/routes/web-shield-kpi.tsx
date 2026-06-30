@@ -3,6 +3,8 @@ import { useEffect, useState, useMemo } from "react";
 import { getWebShieldData, WebShieldRecord } from "@/lib/dataService";
 import { WEB_SHIELD_SHEETS } from "@/lib/sheetConfig";
 import { Pagination } from "@/components/pagination";
+import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
+import { aggregateWeekRows, getCurrentMonthKey, parseIsoDate } from "@/lib/kpiWeek";
 import { useTranslation } from "react-i18next";
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -97,6 +99,7 @@ function WebShieldKpiPage() {
     const [error, setError] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [selectedMonth, setSelectedMonth] = useState("all");
+    const [activeKpiMonth, setActiveKpiMonth] = useState(getCurrentMonthKey);
     const [selectedDev, setSelectedDev] = useState("all");
     const [selectedSheet, setSelectedSheet] = useState("all");
     const [search, setSearch] = useState("");
@@ -140,13 +143,17 @@ function WebShieldKpiPage() {
         return map;
     }, [records]);
 
-    const zoneARecords = useMemo(() => records.filter((r) => {
+    const recordsForKpi = useMemo(() => records.filter((r) => {
         const matchSheet = selectedSheet === "all" || r.sheetId === selectedSheet;
-        const matchMonth = selectedMonth === "all" || r.month === selectedMonth;
         const matchDev = selectedDev === "all"
             || (selectedDev === UNASSIGNED_DEV ? !r.dev : r.dev === selectedDev);
-        return matchSheet && matchMonth && matchDev;
-    }), [records, selectedSheet, selectedMonth, selectedDev]);
+        return matchSheet && matchDev;
+    }), [records, selectedSheet, selectedDev]);
+
+    const zoneARecords = useMemo(() => recordsForKpi.filter((r) => {
+        const matchMonth = selectedMonth === "all" || r.month === selectedMonth;
+        return matchMonth;
+    }), [recordsForKpi, selectedMonth]);
 
     const currentStats = useMemo(() => {
         let done = 0, pending = 0, check = 0, unknown = 0;
@@ -215,6 +222,29 @@ function WebShieldKpiPage() {
     }, [zoneARecords, search]);
 
     const tableData = useMemo(() => buildStats(zoneBRecords), [zoneBRecords]);
+
+    const monthlyWeb = useMemo(() => {
+        const map: Record<string, number> = {};
+        recordsForKpi.forEach((r) => {
+            if (!r.month) return;
+            map[r.month] = (map[r.month] || 0) + 1;
+        });
+        return Object.entries(map)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([month, count]) => {
+                const [y, m] = month.split("-");
+                return { month, label: `M${parseInt(m)}/${y}`, count };
+            });
+    }, [recordsForKpi]);
+
+    const weeklyRows = useMemo(() => aggregateWeekRows(
+        recordsForKpi.map((r) => ({
+            date: parseIsoDate(r.completedDate),
+            group: r.dev || UNASSIGNED_DEV,
+            item: r.web,
+        })),
+    ), [recordsForKpi]);
+
     const paginated = useMemo(() => {
         const start = (currentPage - 1) * ITEMS_PER_PAGE;
         return tableData.slice(start, start + ITEMS_PER_PAGE);
@@ -415,6 +445,17 @@ function WebShieldKpiPage() {
                         {allDevs.map((d) => <option key={d} value={d}>{d.toUpperCase()}</option>)}
                     </select>
                 </div>
+
+                <MonthWeeklyKpiBlock
+                    monthlyData={monthlyWeb}
+                    weeklyRows={weeklyRows}
+                    activeMonth={activeKpiMonth}
+                    onMonthChange={(m) => { setActiveKpiMonth(m); setSelectedMonth(m); }}
+                    groupColumnLabel={t("tableHeaderDev", "Dev")}
+                    title={t("monthlyKpiTitle", "KPI theo tháng")}
+                    subtitle={t("monthlyKpiNote")}
+                    emptyHint={t("weeklyKpiShieldHint")}
+                />
 
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
                     <div className="w-full overflow-x-auto">

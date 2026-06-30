@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import { getAllDataWeb, WebRecord } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
+import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
+import { aggregateWeekRows, getCurrentMonthKey, parseIsoDate } from "@/lib/kpiWeek";
 import { useTranslation } from "react-i18next";
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -102,6 +104,7 @@ function WebKPIPage() {
 
     // Filters
     const [selectedMonth, setSelectedMonth] = useState("all");
+    const [activeKpiMonth, setActiveKpiMonth] = useState(getCurrentMonthKey);
     const [selectedDev, setSelectedDev] = useState("all");
     const [search, setSearch] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
@@ -232,6 +235,36 @@ function WebKPIPage() {
     }, [zoneARecords, search]);
 
     const tableData = useMemo(() => buildStats(zoneBRecords), [zoneBRecords]);
+
+    const monthlyDone = useMemo(() => {
+        const map: Record<string, number> = {};
+        records.forEach((r) => {
+            if (!r.month || getStatusBucket(r.status) !== "done") return;
+            const matchDev = selectedDev === "all" || r.dev === selectedDev;
+            if (!matchDev) return;
+            map[r.month] = (map[r.month] || 0) + 1;
+        });
+        return Object.entries(map)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([month, count]) => {
+                const [y, m] = month.split("-");
+                return { month, label: `M${parseInt(m)}/${y}`, count };
+            });
+    }, [records, selectedDev]);
+
+    const weeklyRows = useMemo(() => {
+        const pool = records.filter((r) => {
+            const matchDev = selectedDev === "all" || r.dev === selectedDev;
+            return matchDev && getStatusBucket(r.status) === "done";
+        });
+        return aggregateWeekRows(
+            pool.map((r) => ({
+                date: parseIsoDate(r.completedDate),
+                group: r.dev || "—",
+                item: r.domain,
+            })),
+        );
+    }, [records, selectedDev]);
 
     const paginated = useMemo(() => {
         const start = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -483,6 +516,17 @@ function WebKPIPage() {
                         </button>
                     )}
                 </div>
+
+                <MonthWeeklyKpiBlock
+                    monthlyData={monthlyDone}
+                    weeklyRows={weeklyRows}
+                    activeMonth={activeKpiMonth}
+                    onMonthChange={(m) => { setActiveKpiMonth(m); setSelectedMonth(m); }}
+                    groupColumnLabel={t("tableHeaderDev", "Dev")}
+                    title={t("monthlyKpiTitle", "KPI theo tháng")}
+                    subtitle={t("monthlyKpiNote")}
+                    emptyHint={t("weeklyKpiWebHint")}
+                />
 
                 {/* ── Table ── */}
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
