@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
-import { getAllDataWeb, WebRecord } from "@/lib/dataService";
+import { getAllDataWeb, WebRecord, getWebStatusBucket, isWebKpiCountable } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
 import { aggregateWeekRows, getCurrentMonthKey, parseIsoDate } from "@/lib/kpiWeek";
@@ -38,19 +38,15 @@ function getDevColor(devName: string, allDevs: string[]) {
     return DEV_COLORS[idx % DEV_COLORS.length];
 }
 
-function getStatusBucket(status: string): "done" | "pending" | "check" | "unknown" {
-    const s = (status ?? "").toLowerCase().trim();
-    if (s.includes("đã hoàn thành") || s.includes("completed") || s.includes("done")) return "done";
-    if (s.includes("chưa") || s.includes("pending") || s.includes("in progress")) return "pending";
-    if (s.includes("check")) return "check";
-    return "unknown";
+function getStatusBucket(status: string) {
+    return getWebStatusBucket(status);
 }
 
 function buildStats(records: WebRecord[]): DevMonthStat[] {
     const map = new Map<string, DevMonthStat>();
     for (const r of records) {
         if (!r.month || !r.dev) continue;
-        if (getStatusBucket(r.status) !== "done") continue;
+        if (!isWebKpiCountable(r.status)) continue;
         const key = `${r.dev}|${r.month}`;
         if (!map.has(key)) {
             map.set(key, { dev: r.dev, month: r.month, monthLabel: "", websites: [], count: 0 });
@@ -161,13 +157,13 @@ function WebKPIPage() {
             if (b === "unknown") unknown++;
             if (r.dev) devs.add(r.dev);
         });
-        return { total: zoneARecords.length, done, pending, check, unknown, devCount: devs.size };
+        const kpiTotal = zoneARecords.filter((r) => isWebKpiCountable(r.status)).length;
+        return { total: zoneARecords.length, done, pending, check, unknown, kpiTotal, devCount: devs.size };
     }, [zoneARecords]);
 
     const topDevInfo = useMemo(() => {
         const pool = records.filter(r => {
-            const isDone = getStatusBucket(r.status) === "done";
-            if (!isDone) return false;
+            if (!isWebKpiCountable(r.status)) return false;
             return selectedMonth === "all" || r.month === selectedMonth;
         });
 
@@ -216,7 +212,7 @@ function WebKPIPage() {
     const devBarData = useMemo(() => {
         const map: Record<string, { name: string; done: number }> = {};
         zoneARecords.forEach(r => {
-            if (getStatusBucket(r.status) === "done" && r.dev) {
+            if (isWebKpiCountable(r.status) && r.dev) {
                 if (!map[r.dev]) map[r.dev] = { name: r.dev, done: 0 };
                 map[r.dev].done++;
             }
@@ -239,7 +235,7 @@ function WebKPIPage() {
     const monthlyDone = useMemo(() => {
         const map: Record<string, number> = {};
         records.forEach((r) => {
-            if (!r.month || getStatusBucket(r.status) !== "done") return;
+            if (!r.month || !isWebKpiCountable(r.status)) return;
             const matchDev = selectedDev === "all" || r.dev === selectedDev;
             if (!matchDev) return;
             map[r.month] = (map[r.month] || 0) + 1;
@@ -255,7 +251,7 @@ function WebKPIPage() {
     const weeklyRows = useMemo(() => {
         const pool = records.filter((r) => {
             const matchDev = selectedDev === "all" || r.dev === selectedDev;
-            return matchDev && getStatusBucket(r.status) === "done";
+            return matchDev && isWebKpiCountable(r.status);
         });
         return aggregateWeekRows(
             pool.map((r) => ({
@@ -347,18 +343,18 @@ function WebKPIPage() {
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-emerald-500 border-t-2">
                         <div>
                             <p className="text-[9px] font-black uppercase text-emerald-500 tracking-[0.15em]">
-                                {t("statusCompleted", "Completed")}
+                                {t("webKpiCompleted", "KPI Web")}
                             </p>
                             <div className="flex items-baseline gap-2 mt-1">
-                                <h2 className="text-2xl font-black text-emerald-600">{currentStats.done}</h2>
+                                <h2 className="text-2xl font-black text-emerald-600">{currentStats.kpiTotal}</h2>
                                 <span className="text-[10px] font-bold text-emerald-400">
-                                    ({currentStats.total > 0 ? ((currentStats.done / currentStats.total) * 100).toFixed(1) : 0}%)
+                                    ({currentStats.total > 0 ? ((currentStats.kpiTotal / currentStats.total) * 100).toFixed(1) : 0}%)
                                 </span>
                             </div>
                         </div>
                         <div className="mt-3 flex items-center gap-1 text-[9px] font-bold text-emerald-400">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            {t("doneUpper", "DONE")}
+                            {t("webKpiCompletedHint", "HT + cần check")}
                         </div>
                     </div>
 

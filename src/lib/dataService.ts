@@ -37,6 +37,32 @@ export interface WebRecord {
     status: string;
 }
 
+export type WebStatusBucket = "done" | "pending" | "check" | "unknown";
+
+export function getWebStatusBucket(status: string): WebStatusBucket {
+    const s = (status ?? "").toLowerCase().trim();
+    if (s.includes("đã hoàn thành") || s.includes("da hoan thanh") || s.includes("completed") || s === "done" || s === "true") {
+        return "done";
+    }
+    if (s.includes("cần check") || s.includes("can check") || s.includes("need check")) return "check";
+    if (s.includes("chưa") || s.includes("pending") || s.includes("in progress")) return "pending";
+    if (s.includes("check")) return "check";
+    return "unknown";
+}
+
+/** KPI Web GMC: đã hoàn thành + cần check (web đã làm xong, chờ QA) */
+export function isWebKpiCountable(status: string): boolean {
+    const b = getWebStatusBucket(status);
+    return b === "done" || b === "check";
+}
+
+const parseWebCompletedDate = (raw: string): string | null => {
+    const dmy = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    return null;
+};
+
 export interface WebShieldRecord {
     sheetId: string;
     sheetName: string;
@@ -192,28 +218,27 @@ export const getAllDataWeb = async (forceRefresh = false): Promise<WebRecord[]> 
         const records: WebRecord[] = [];
 
         for (const row of rows) {
-            const domain = (row["Tên Domain"] ?? "").trim();
+            const domain = (row["Tên Domain"] ?? "").trim().toLowerCase();
             if (!domain) continue;
 
             const dev = (row["Tên Dev"] ?? "").trim();
             const status = (row["Đã hoàn thành"] ?? "").trim();
             const rawDate = (row["Ngày hoàn thành"] ?? "").trim();
 
-            const parseDate = (raw: string): string | null => {
-                const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-                if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
-                if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-                return null;
-            };
-
-            const completedDate = parseDate(rawDate);
+            const completedDate = parseWebCompletedDate(rawDate);
             const month = completedDate ? completedDate.slice(0, 7) : null;
 
             records.push({ domain, dev, completedDate, month, status });
         }
 
-        cachedAllData = records;
-        return records;
+        // Mỗi domain 1 dòng — lấy bản ghi cuối (khớp sheet KPI thực tế)
+        const byDomain = new Map<string, WebRecord>();
+        for (const r of records) {
+            byDomain.set(r.domain, r);
+        }
+
+        cachedAllData = [...byDomain.values()];
+        return cachedAllData;
 
     } catch (error) {
         console.error("Fetch error:", error);
