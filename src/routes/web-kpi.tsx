@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
-import { getAllDataWeb, WebRecord, getWebStatusBucket, isWebKpiCountable } from "@/lib/dataService";
+import { getAllDataWeb, WebRecord, getWebStatusBucket, isWebKpiRecord } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
 import { aggregateWeekRows, getCurrentMonthKey, parseIsoDate } from "@/lib/kpiWeek";
@@ -46,7 +46,7 @@ function buildStats(records: WebRecord[]): DevMonthStat[] {
     const map = new Map<string, DevMonthStat>();
     for (const r of records) {
         if (!r.month || !r.dev) continue;
-        if (!isWebKpiCountable(r.status)) continue;
+        if (!isWebKpiRecord(r)) continue;
         const key = `${r.dev}|${r.month}`;
         if (!map.has(key)) {
             map.set(key, { dev: r.dev, month: r.month, monthLabel: "", websites: [], count: 0 });
@@ -147,25 +147,21 @@ function WebKPIPage() {
     }, [records, selectedMonth, selectedDev]);
 
     const currentStats = useMemo(() => {
-        let done = 0, pending = 0, check = 0, unknown = 0;
+        let pending = 0, unknown = 0;
         const devs = new Set<string>();
         zoneARecords.forEach(r => {
             const b = getStatusBucket(r.status);
-            if (b === "done") done++;
             if (b === "pending") pending++;
-            if (b === "check") check++;
             if (b === "unknown") unknown++;
             if (r.dev) devs.add(r.dev);
         });
-        const kpiTotal = zoneARecords.filter((r) => isWebKpiCountable(r.status)).length;
-        return { total: zoneARecords.length, done, pending, check, unknown, kpiTotal, devCount: devs.size };
+        const kpiTotal = zoneARecords.filter((r) => isWebKpiRecord(r)).length;
+        const checkCount = zoneARecords.filter((r) => getStatusBucket(r.status) === "check").length;
+        return { total: zoneARecords.length, done: kpiTotal, pending, check: checkCount, unknown, kpiTotal, devCount: devs.size };
     }, [zoneARecords]);
 
     const topDevInfo = useMemo(() => {
-        const pool = records.filter(r => {
-            if (!isWebKpiCountable(r.status)) return false;
-            return selectedMonth === "all" || r.month === selectedMonth;
-        });
+        const pool = records.filter(r => isWebKpiRecord(r) && (selectedMonth === "all" || r.month === selectedMonth));
 
         if (!pool.length) return null;
 
@@ -203,16 +199,15 @@ function WebKPIPage() {
     }, [records, selectedMonth]);
 
     const pieData = useMemo(() => [
-        { name: t("statusCompleted", "Completed"), value: currentStats.done, color: "#10b981" },
+        { name: t("webKpiCompleted", "KPI Web"), value: currentStats.kpiTotal, color: "#10b981" },
         { name: t("statusInProgress", "In Progress"), value: currentStats.pending, color: "#f59e0b" },
-        { name: t("statusNeedCheck", "Need Check"), value: currentStats.check, color: "#3b82f6" },
         { name: t("statusUnclassified", "Unclassified"), value: currentStats.unknown, color: "#94a3b8" },
     ].filter(d => d.value > 0), [currentStats, t]);
 
     const devBarData = useMemo(() => {
         const map: Record<string, { name: string; done: number }> = {};
         zoneARecords.forEach(r => {
-            if (isWebKpiCountable(r.status) && r.dev) {
+            if (isWebKpiRecord(r)) {
                 if (!map[r.dev]) map[r.dev] = { name: r.dev, done: 0 };
                 map[r.dev].done++;
             }
@@ -235,7 +230,7 @@ function WebKPIPage() {
     const monthlyDone = useMemo(() => {
         const map: Record<string, number> = {};
         records.forEach((r) => {
-            if (!r.month || !isWebKpiCountable(r.status)) return;
+            if (!isWebKpiRecord(r)) return;
             const matchDev = selectedDev === "all" || r.dev === selectedDev;
             if (!matchDev) return;
             map[r.month] = (map[r.month] || 0) + 1;
@@ -249,10 +244,7 @@ function WebKPIPage() {
     }, [records, selectedDev]);
 
     const weeklyRows = useMemo(() => {
-        const pool = records.filter((r) => {
-            const matchDev = selectedDev === "all" || r.dev === selectedDev;
-            return matchDev && isWebKpiCountable(r.status);
-        });
+        const pool = records.filter((r) => isWebKpiRecord(r) && (selectedDev === "all" || r.dev === selectedDev));
         return aggregateWeekRows(
             pool.map((r) => ({
                 date: parseIsoDate(r.completedDate),
@@ -390,7 +382,7 @@ function WebKPIPage() {
                             </div>
                         </div>
                         <p className="text-[9px] font-bold text-blue-400 uppercase mt-3">
-                            {t("awaitingQA", "Awaiting QA")}
+                            {t("webKpiCheckHint", "Có ngày HT → tính KPI")}
                         </p>
                     </div>
 

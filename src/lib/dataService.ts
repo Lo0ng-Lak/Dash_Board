@@ -50,7 +50,16 @@ export function getWebStatusBucket(status: string): WebStatusBucket {
     return "unknown";
 }
 
-/** KPI Web GMC: đã hoàn thành + cần check (web đã làm xong, chờ QA) */
+/** KPI Web GMC: đã HT hoặc cần check — miễn có ngày hoàn thành */
+export function isWebKpiRecord(
+    r: Pick<WebRecord, "status" | "completedDate" | "month" | "dev">,
+): boolean {
+    if (!r.completedDate?.trim() || !r.month || !r.dev?.trim()) return false;
+    const b = getWebStatusBucket(r.status);
+    return b === "done" || b === "check";
+}
+
+/** @deprecated dùng isWebKpiRecord */
 export function isWebKpiCountable(status: string): boolean {
     const b = getWebStatusBucket(status);
     return b === "done" || b === "check";
