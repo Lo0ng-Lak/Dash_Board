@@ -7,9 +7,6 @@ import { REG_KPI_SHEETS } from "@/lib/sheetConfig";
 import { Pagination } from "@/components/pagination";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
 import { aggregateWeekRows, getCurrentMonthKey, parseDmyDate } from "@/lib/kpiWeek";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
-} from "recharts";
 
 const ITEMS = 12;
 
@@ -44,6 +41,8 @@ const fmtMonthKey = (ym: string) => {
   const [y, m] = ym.split("-");
   return `${m}/${y}`;
 };
+
+const hasRegGmcDate = (dateStr: string) => Boolean(parseRegMonth(dateStr));
 
 function RegKpiPage() {
   const { t } = useTranslation();
@@ -97,11 +96,13 @@ function RegKpiPage() {
   }, [ownerPool]);
 
   const weeklyRows = useMemo(() => aggregateWeekRows(
-    ownerPool.map((r) => ({
-      date: parseDmyDate(r.dateRegGmc),
-      group: r.ownerName,
-      item: r.domain,
-    })),
+    ownerPool
+      .filter((r) => hasRegGmcDate(r.dateRegGmc))
+      .map((r) => ({
+        date: parseDmyDate(r.dateRegGmc),
+        group: r.ownerName,
+        item: r.domain,
+      })),
   ), [ownerPool]);
 
   const stats = useMemo(() => {
@@ -115,20 +116,6 @@ function RegKpiPage() {
       isPass(r.ketQua1) || isPass(r.ketQua2) || isPass(r.ketQua3)).length;
     return { total, live, sus, khangFail, khangPass };
   }, [ownerPool]);
-
-  const byOwnerBar = useMemo(() => {
-    return REG_KPI_SHEETS.map((s) => ({
-      name: s.name,
-      total: records.filter((r) => r.ownerId === s.id).length,
-      live: records.filter((r) => r.ownerId === s.id && isLive(r.susStatus)).length,
-      color: OWNER_COLORS[s.id] ?? "#64748b",
-    }));
-  }, [records]);
-
-  const pieData = useMemo(() => [
-    { name: t("active"), value: stats.live, color: "#10b981" },
-    { name: t("suspended"), value: stats.sus, color: "#ef4444" },
-  ].filter((d) => d.value > 0), [stats, t]);
 
   const paginated = useMemo(() => {
     const start = (page - 1) * ITEMS;
@@ -207,47 +194,13 @@ function RegKpiPage() {
         <MonthWeeklyKpiBlock
           monthlyData={monthlyReg}
           weeklyRows={weeklyRows}
-          activeMonth={activeKpiMonth}
+          activeMonth={monthFilter !== "all" ? monthFilter : activeKpiMonth}
           onMonthChange={(m) => { setActiveKpiMonth(m); setMonthFilter(m); }}
           groupColumnLabel={t("owner", "Người")}
           title={t("monthlyRegTitle")}
           subtitle={t("monthlyKpiNote")}
           emptyHint={t("weeklyKpiRegHint")}
         />
-
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6">{t("systemRatioOverview")}</h3>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={pieData} innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value">
-                    {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6">{t("regByOwner")}</h3>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={byOwnerBar}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip />
-                  <Bar dataKey="total" name={t("totalRegGmc")} radius={[4, 4, 0, 0]} barSize={22}>
-                    {byOwnerBar.map((e, i) => <Cell key={i} fill={e.color} />)}
-                  </Bar>
-                  <Bar dataKey="live" name={t("active")} fill="#10b981" radius={[4, 4, 0, 0]} barSize={22} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
 
         {/* Filters */}
         <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-3 shadow-sm">
@@ -261,7 +214,11 @@ function RegKpiPage() {
           <select
             className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer"
             value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setMonthFilter(v);
+              if (v !== "all") setActiveKpiMonth(v);
+            }}
           >
             <option value="all">📅 {t("allMonths")}</option>
             {monthOptions.map((m) => (

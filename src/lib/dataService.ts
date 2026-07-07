@@ -33,6 +33,7 @@ export interface WebRecord {
     domain: string;
     dev: string;
     completedDate: string | null; // "YYYY-MM-DD" | null
+    rawCompletedDate: string;     // giá trị gốc cột "Ngày hoàn thành"
     month: string | null;         // "YYYY-MM" | null
     status: string;
 }
@@ -50,13 +51,19 @@ export function getWebStatusBucket(status: string): WebStatusBucket {
     return "unknown";
 }
 
-/** KPI Web GMC: đã HT hoặc cần check — miễn có ngày hoàn thành */
-export function isWebKpiRecord(
-    r: Pick<WebRecord, "status" | "completedDate" | "month" | "dev">,
+/** Có ngày ghi trong cột "Ngày hoàn thành" (định dạng hợp lệ) */
+export function hasWebCompletionDate(
+    r: Pick<WebRecord, "completedDate" | "rawCompletedDate">,
 ): boolean {
-    if (!r.completedDate?.trim() || !r.month || !r.dev?.trim()) return false;
-    const b = getWebStatusBucket(r.status);
-    return b === "done" || b === "check";
+    return Boolean(r.rawCompletedDate?.trim() && r.completedDate?.trim());
+}
+
+/** KPI Web GMC: chỉ tính khi có ngày hoàn thành — không tính "Chưa hoàn thành" */
+export function isWebKpiRecord(
+    r: Pick<WebRecord, "status" | "completedDate" | "rawCompletedDate" | "month" | "dev">,
+): boolean {
+    if (!hasWebCompletionDate(r) || !r.month || !r.dev?.trim()) return false;
+    return getWebStatusBucket(r.status) !== "pending";
 }
 
 /** @deprecated dùng isWebKpiRecord */
@@ -66,9 +73,17 @@ export function isWebKpiCountable(status: string): boolean {
 }
 
 const parseWebCompletedDate = (raw: string): string | null => {
-    const dmy = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const dmy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmy) {
+        const y = Number(dmy[3]);
+        const m = Number(dmy[2]);
+        const d = Number(dmy[1]);
+        if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+        return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
     return null;
 };
 
@@ -237,10 +252,10 @@ export const getAllDataWeb = async (forceRefresh = false): Promise<WebRecord[]> 
             const completedDate = parseWebCompletedDate(rawDate);
             const month = completedDate ? completedDate.slice(0, 7) : null;
 
-            records.push({ domain, dev, completedDate, month, status });
+            records.push({ domain, dev, completedDate, rawCompletedDate: rawDate, month, status });
         }
 
-        // Mỗi domain 1 dòng — lấy bản ghi cuối (khớp sheet KPI thực tế)
+        // Mỗi domain 1 dòng — lấy bản ghi cuối; không có ngày HT → không tính KPI
         const byDomain = new Map<string, WebRecord>();
         for (const r of records) {
             byDomain.set(r.domain, r);

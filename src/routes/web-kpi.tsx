@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import { getAllDataWeb, WebRecord, getWebStatusBucket, isWebKpiRecord } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
+import { DevKpiTabs } from "@/components/dev-kpi-tabs";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
 import { aggregateWeekRows, getCurrentMonthKey, parseIsoDate } from "@/lib/kpiWeek";
 import { useTranslation } from "react-i18next";
@@ -137,6 +138,21 @@ function WebKPIPage() {
         [...new Set(baseStats.map(s => s.month))].sort((a, b) => b.localeCompare(a)),
         [baseStats]);
 
+    const kpiRecords = useMemo(() => records.filter(isWebKpiRecord), [records]);
+
+    const devTabItems = useMemo(() => {
+        const map: Record<string, number> = {};
+        kpiRecords.forEach((r) => {
+            if (!r.dev) return;
+            map[r.dev] = (map[r.dev] || 0) + 1;
+        });
+        return Object.entries(map)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count);
+    }, [kpiRecords]);
+
+    const kpiMonth = selectedMonth !== "all" ? selectedMonth : activeKpiMonth;
+
     // ── 2. ZONE A: Dropdown-only filter ──────────────────────────────────────
     const zoneARecords = useMemo(() => {
         return records.filter(r => {
@@ -156,17 +172,17 @@ function WebKPIPage() {
             if (r.dev) devs.add(r.dev);
         });
         const kpiTotal = zoneARecords.filter((r) => isWebKpiRecord(r)).length;
-        const checkCount = zoneARecords.filter((r) => getStatusBucket(r.status) === "check").length;
+        const checkCount = zoneARecords.filter((r) => getStatusBucket(r.status) === "check" && isWebKpiRecord(r)).length;
         return { total: zoneARecords.length, done: kpiTotal, pending, check: checkCount, unknown, kpiTotal, devCount: devs.size };
     }, [zoneARecords]);
 
     const topDevInfo = useMemo(() => {
-        const pool = records.filter(r => isWebKpiRecord(r) && (selectedMonth === "all" || r.month === selectedMonth));
+        const pool = kpiRecords.filter((r) => r.month === kpiMonth);
 
         if (!pool.length) return null;
 
         const counts: Record<string, number> = {};
-        pool.forEach(r => {
+        pool.forEach((r) => {
             if (r.dev) counts[r.dev] = (counts[r.dev] || 0) + 1;
         });
 
@@ -177,26 +193,14 @@ function WebKPIPage() {
 
         if (top.count === 0) return null;
 
-        // Chuẩn hóa dữ liệu trả về để object luôn luôn có cấu trúc giống nhau
-        if (selectedMonth === "all") {
-            return {
-                dev: top.dev,
-                count: top.count,
-                isAllTime: true,
-                year: "",
-                month: 0
-            };
-        } else {
-            const [y, m] = selectedMonth.split("-");
-            return {
-                dev: top.dev,
-                count: top.count,
-                isAllTime: false,
-                year: y,
-                month: parseInt(m)
-            };
-        }
-    }, [records, selectedMonth]);
+        const [y, m] = kpiMonth.split("-");
+        return {
+            dev: top.dev,
+            count: top.count,
+            year: y,
+            month: parseInt(m, 10),
+        };
+    }, [kpiRecords, kpiMonth]);
 
     const pieData = useMemo(() => [
         { name: t("webKpiCompleted", "KPI Web"), value: currentStats.kpiTotal, color: "#10b981" },
@@ -297,6 +301,14 @@ function WebKPIPage() {
                     </div>
                 </div>
 
+                <DevKpiTabs
+                    items={devTabItems}
+                    totalCount={kpiRecords.length}
+                    selected={selectedDev}
+                    onSelect={(dev) => { setSelectedDev(dev); setCurrentPage(1); }}
+                    allLabel={t("allDevsFilter", "ALL DEVS")}
+                />
+
                 {/* ── Stats Cards ── */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
 
@@ -391,19 +403,17 @@ function WebKPIPage() {
                         <div>
                             <p className="text-[9px] font-black uppercase text-indigo-500 tracking-[0.15em]">
                                 {topDevInfo
-                                    ? topDevInfo.isAllTime
-                                        ? `${t("topDev", "Top Dev")} — ${t("allTime", "All Time")}`
-                                        : `${t("topDev", "Top Dev")} — ${t("monthLabelFormat", { month: topDevInfo.month, year: topDevInfo.year })}`
-                                    : t("activeDevs", "Active Devs")}
+                                    ? `${t("topDev", "Top Dev")} — ${t("monthLabelFormat", { month: topDevInfo.month, year: topDevInfo.year })}`
+                                    : t("topDev", "Top Dev")}
                             </p>
                             <h2 className="text-2xl font-black text-indigo-600 mt-1 truncate">
-                                {topDevInfo ? topDevInfo.dev : currentStats.devCount}
+                                {topDevInfo ? topDevInfo.dev : "—"}
                             </h2>
                         </div>
                         <p className="text-[9px] font-bold text-indigo-300 uppercase mt-3">
                             {topDevInfo
                                 ? t("sitesCompletedCount", { count: topDevInfo.count, defaultValue: `${topDevInfo.count} sites completed` })
-                                : t("devsInFilterCount", { count: currentStats.devCount, defaultValue: `${currentStats.devCount} devs in filter` })}
+                                : t("noKpiThisMonth", "Chưa có KPI tháng này")}
                         </p>
                     </div>
 
@@ -475,7 +485,12 @@ function WebKPIPage() {
                     <select
                         className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100 transition-colors"
                         value={selectedMonth}
-                        onChange={e => { setSelectedMonth(e.target.value); setCurrentPage(1); }}
+                        onChange={e => {
+                            const v = e.target.value;
+                            setSelectedMonth(v);
+                            if (v !== "all") setActiveKpiMonth(v);
+                            setCurrentPage(1);
+                        }}
                     >
                         <option value="all">📅 {t("allMonths", "ALL MONTHS")}</option>
                         {allMonths.map((ym: string) => {
@@ -487,17 +502,15 @@ function WebKPIPage() {
                             );
                         })}
                     </select>
-                    <select
-                        className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100 transition-colors"
-                        value={selectedDev}
-                        onChange={e => { setSelectedDev(e.target.value); setCurrentPage(1); }}
-                    >
-                        <option value="all">👤 {t("allDevsFilter", "ALL DEVS")}</option>
-                        {allDevs.map(d => <option key={d} value={d}>{d.toUpperCase()}</option>)}
-                    </select>
                     {(selectedMonth !== "all" || selectedDev !== "all" || search) && (
                         <button
-                            onClick={() => { setSelectedMonth("all"); setSelectedDev("all"); setSearch(""); setCurrentPage(1); }}
+                            onClick={() => {
+                                setSelectedMonth("all");
+                                setSelectedDev("all");
+                                setSearch("");
+                                setActiveKpiMonth(getCurrentMonthKey());
+                                setCurrentPage(1);
+                            }}
                             className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
                         >
                             ✕ {t("clearFilters", "Clear filters")}
@@ -508,7 +521,7 @@ function WebKPIPage() {
                 <MonthWeeklyKpiBlock
                     monthlyData={monthlyDone}
                     weeklyRows={weeklyRows}
-                    activeMonth={activeKpiMonth}
+                    activeMonth={selectedMonth !== "all" ? selectedMonth : activeKpiMonth}
                     onMonthChange={(m) => { setActiveKpiMonth(m); setSelectedMonth(m); }}
                     groupColumnLabel={t("tableHeaderDev", "Dev")}
                     title={t("monthlyKpiTitle", "KPI theo tháng")}

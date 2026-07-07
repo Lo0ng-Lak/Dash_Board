@@ -1,12 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { useTranslation } from "react-i18next"; // 🌐 Import hook dịch thuật
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getGMCRegData, isValidGmcWebDomain } from "../lib/dataService";
+import { DevKpiTabs } from "@/components/dev-kpi-tabs";
+import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { Pagination } from "../components/pagination";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie
-} from "recharts";
+import { fmtMonthShort, getCurrentMonthKey, parseDmyDate } from "@/lib/kpiWeek";
+
+const parseGmcMonth = (dateGMC: string): string | null => {
+  const d = parseDmyDate(dateGMC);
+  if (!d) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
 
 interface GMCRegItem {
   proxy: string;
@@ -80,7 +86,7 @@ function GMCPremiumDashboard() {
   const [devFilter, setDevFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [webTypeFilter, setWebTypeFilter] = useState("all");
-  const [monthFilter, setMonthFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState<string>("");
 
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
@@ -119,25 +125,17 @@ function GMCPremiumDashboard() {
     return isNaN(parsed) ? 0 : parsed;
   };
 
-  const parseDmyDate = (dateStr: string): Date | null => {
-    if (!dateStr || dateStr === "—") return null;
-    const parts = dateStr.trim().split("/").map(Number);
-    if (parts.length !== 3 || parts.some((n) => isNaN(n))) return null;
-    const [day, month, year] = parts;
-    const d = new Date(year, month - 1, day);
-    d.setHours(0, 0, 0, 0);
-    return isNaN(d.getTime()) ? null : d;
-  };
+  const parseDmyDateLocal = (dateStr: string): Date | null => parseDmyDate(dateStr);
 
   const daysBetween = (start: Date, end: Date): number =>
     Math.max(0, Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 
   /** Số ngày xanh: có Ngày Sus → từ Ngày về GMC đến Ngày Sus; không thì đến hôm nay */
   const calculateGreenDays = (item: GMCRegItem): number | null => {
-    const gmcDate = parseDmyDate(item.dateGMC);
+    const gmcDate = parseDmyDateLocal(item.dateGMC);
     if (!gmcDate) return null;
 
-    const susDate = parseDmyDate(item.dateSus);
+    const susDate = parseDmyDateLocal(item.dateSus);
     if (susDate) {
       return daysBetween(gmcDate, susDate);
     }
@@ -150,25 +148,74 @@ function GMCPremiumDashboard() {
     return daysBetween(gmcDate, today);
   };
 
-  // ==========================================
-  // ZONE 0: GLOBAL STATS (toàn bộ dữ liệu REG GMC)
-  // ==========================================
-  const globalStats = useMemo(() => {
-    const totalAcc = regData.length;
-    const totalDomains = new Set(regData.map((item) => item.domain.toLowerCase().trim())).size;
-    const totalLive = regData.filter((item) => !isSuspended(item.status)).length;
-    const totalSus = regData.filter((item) => isSuspended(item.status)).length;
-    const totalCost = regData.reduce((sum, item) => sum + parseCost(item.cost), 0);
-
-    return { totalAcc, totalDomains, totalLive, totalSus, totalCost };
+  const devTabItems = useMemo(() => {
+    const map: Record<string, number> = {};
+    regData.forEach((item) => {
+      const dev = item.dev?.trim();
+      if (!dev) return;
+      map[dev] = (map[dev] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
   }, [regData]);
 
+  const devPool = useMemo(
+    () => (devFilter === "all"
+      ? regData
+      : regData.filter((item) => item.dev?.toLowerCase() === devFilter.toLowerCase())),
+    [regData, devFilter],
+  );
+
+  const latestMonth = useMemo(() => {
+    const months = devPool
+      .map((item) => parseGmcMonth(item.dateGMC))
+      .filter(Boolean) as string[];
+    if (!months.length) return getCurrentMonthKey();
+    return months.sort((a, b) => b.localeCompare(a))[0];
+  }, [devPool]);
+
+  useEffect(() => {
+    setMonthFilter(latestMonth);
+    setCurrentPage(1);
+  }, [devFilter, latestMonth]);
+
+  const activeMonth = monthFilter === "all" ? "all" : (monthFilter || latestMonth);
+
+  const monthTabItems = useMemo(() => {
+    const map: Record<string, number> = {};
+    devPool.forEach((item) => {
+      const m = parseGmcMonth(item.dateGMC);
+      if (!m) return;
+      map[m] = (map[m] || 0) + 1;
+    });
+    return Object.entries(map)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([month, count]) => ({ month, count }));
+  }, [devPool]);
+
+  const monthPool = useMemo(() => {
+    if (activeMonth === "all") return devPool;
+    return devPool.filter((item) => parseGmcMonth(item.dateGMC) === activeMonth);
+  }, [devPool, activeMonth]);
+
+  const stats = useMemo(() => {
+    const total = monthPool.length;
+    const live = monthPool.filter((item) => !isSuspended(item.status)).length;
+    const sus = total - live;
+    const domains = new Set(monthPool.map((item) => item.domain.toLowerCase().trim())).size;
+    const totalCost = monthPool.reduce((sum, item) => sum + parseCost(item.cost), 0);
+    return { total, live, sus, domains, totalCost };
+  }, [monthPool]);
+
   // ==========================================
-  // ZONE 1: FILTER BY DROPDOWN CATEGORY (Stats + Charts)
+  // ZONE 1: FILTER BY DROPDOWN CATEGORY
   // ==========================================
   const dropdownFilteredData = useMemo(() => {
     return orderedFullData.filter((item: GMCRegItem) => {
-      const matchesDev = devFilter === "all" ? true : item.dev === devFilter;
+      const matchesDev = devFilter === "all"
+        ? true
+        : item.dev?.toLowerCase() === devFilter.toLowerCase();
 
       const matchesStatus = statusFilter === "all"
         ? true
@@ -176,69 +223,21 @@ function GMCPremiumDashboard() {
 
       const matchesWebType = webTypeFilter === "all" ? true : item.webType === webTypeFilter;
 
-      const itemMonthYear = item.dateGMC && item.dateGMC !== "—"
-        ? `${item.dateGMC.split("/")[1]}/${item.dateGMC.split("/")[2]}`
-        : null;
-      const matchesMonth = monthFilter === "all" ? true : itemMonthYear === monthFilter;
+      const itemMonth = parseGmcMonth(item.dateGMC);
+      const matchesMonth = activeMonth === "all" ? true : itemMonth === activeMonth;
 
       return matchesDev && matchesStatus && matchesWebType && matchesMonth;
     });
-  }, [orderedFullData, devFilter, statusFilter, webTypeFilter, monthFilter]);
+  }, [orderedFullData, devFilter, statusFilter, webTypeFilter, activeMonth]);
 
   // ==========================================
-  // ZONE 2: DYNAMIC STATISTICS & CHARTS CALCULATION
-  // ==========================================
-  const dynamicStats = useMemo(() => {
-    const total = dropdownFilteredData.length;
-    const live = dropdownFilteredData.filter((item: GMCRegItem) => !isSuspended(item.status)).length;
-    const sus = dropdownFilteredData.filter((item: GMCRegItem) => isSuspended(item.status)).length;
-    const totalCost = dropdownFilteredData.reduce((sum: number, item: GMCRegItem) => sum + parseCost(item.cost), 0);
-    const totalUniqueDomains = new Set(dropdownFilteredData.map((item) => item.domain.toLowerCase().trim())).size;
-
-    return { total, live, sus, totalCost, totalUniqueDomains };
-  }, [dropdownFilteredData]);
-
-  // Structure data for pie chart
-  const pieChartStats = useMemo(() => [
-    { name: t("active"), value: dynamicStats.live, color: "#10b981" },
-    { name: t("suspended"), value: dynamicStats.sus, color: "#ef4444" }
-  ], [dynamicStats, t]);
-
-  // Structure data for bar chart productivity by Dev
-  const devProductivityStats = useMemo(() => {
-    const statsMap: Record<string, { name: string; total: number; live: number; sus: number; totalCost: number }> = {};
-
-    dropdownFilteredData.forEach((item: GMCRegItem) => {
-      const devName = item.dev || "Unknown";
-      if (!statsMap[devName]) {
-        statsMap[devName] = { name: devName, total: 0, live: 0, sus: 0, totalCost: 0 };
-      }
-      statsMap[devName].total += 1;
-
-      if (isSuspended(item.status)) {
-        statsMap[devName].sus += 1;
-      } else {
-        statsMap[devName].live += 1;
-      }
-      statsMap[devName].totalCost += parseCost(item.cost);
-    });
-    return Object.values(statsMap).sort((a, b) => b.total - a.total);
-  }, [dropdownFilteredData]);
-
-  // ==========================================
-  // ZONE 3: SEARCH INPUT FILTER & SEARCH STATS
+  // ZONE 2: SEARCH INPUT FILTER
   // ==========================================
   const finalFilteredTableData = useMemo(() => {
     return dropdownFilteredData.filter((item: GMCRegItem) => {
       return item.domain.toLowerCase().includes(searchDomain.toLowerCase());
     });
   }, [dropdownFilteredData, searchDomain]);
-
-  const searchStats = useMemo(() => {
-    const totalCost = finalFilteredTableData.reduce((sum: number, item: GMCRegItem) => sum + parseCost(item.cost), 0);
-    const totalRows = finalFilteredTableData.length;
-    return { totalCost, totalRows };
-  }, [finalFilteredTableData]);
 
   // Map domain frequency across entire system to label RE-REG
   const globalDomainFrequencyMap = useMemo(() => {
@@ -251,31 +250,10 @@ function GMCPremiumDashboard() {
   }, [orderedFullData]);
 
   // Extract lists for dropdown filters
-  const uniqueMonthsOptions = useMemo(() => {
-    const monthsSet = new Set<string>();
-    regData.forEach((item: GMCRegItem) => {
-      if (item.dateGMC && item.dateGMC !== "—") {
-        const [_, month, year] = item.dateGMC.split("/");
-        monthsSet.add(`${month}/${year}`);
-      }
-    });
-    return Array.from(monthsSet).sort((a, b) => {
-      const [m1, y1] = a.split("/").map(Number);
-      const [m2, y2] = b.split("/").map(Number);
-      return y2 - y1 || m2 - m1;
-    });
-  }, [regData]);
-
   const uniqueWebTypesOptions = useMemo(() => {
     const typesSet = new Set<string>();
     regData.forEach((item: GMCRegItem) => item.webType && item.webType !== "—" && typesSet.add(item.webType));
     return Array.from(typesSet);
-  }, [regData]);
-
-  const uniqueDevsOptions = useMemo(() => {
-    const devsSet = new Set<string>();
-    regData.forEach((item: GMCRegItem) => item.dev && devsSet.add(item.dev));
-    return Array.from(devsSet);
   }, [regData]);
 
   // Paginated data to render on table
@@ -294,150 +272,65 @@ function GMCPremiumDashboard() {
     <div className="min-h-screen bg-[#F4F7F9] p-8 text-slate-900">
       <div className="max-w-7xl mx-auto space-y-8">
 
-        {/* DASHBOARD TITLE */}
-        <div className="flex flex-col md:flex-row justify-between items-end gap-4">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("gmcRegManagement")}</h1>
-            <p className="text-slate-500 font-medium text-sm">{t("gmcSystemDesc")}</p>
+        <div className="space-y-1">
+          <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("gmcRegManagement")}</h1>
+          <p className="text-slate-500 font-medium text-sm">{t("gmcSystemDesc")}</p>
+        </div>
+
+        <DevKpiTabs
+          items={devTabItems}
+          totalCount={regData.length}
+          selected={devFilter}
+          onSelect={(dev) => { setDevFilter(dev); setCurrentPage(1); }}
+          allLabel={t("allOwners")}
+        />
+
+        <div className="space-y-2">
+          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
+            {t("gmcMonthFilterTitle")}
+          </p>
+          <MonthFilterTabs
+            items={monthTabItems}
+            totalWithDate={devPool.filter((item) => parseGmcMonth(item.dateGMC)).length}
+            selected={activeMonth}
+            onSelect={(m) => { setMonthFilter(m); setCurrentPage(1); }}
+            allLabel={t("allMonths")}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm font-bold text-slate-600">
+            {activeMonth === "all"
+              ? t("gmcMonthStatsAll")
+              : t("gmcMonthStatsLabel", { month: fmtMonthShort(activeMonth) })}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-t-slate-800 border-t-2">
+            <p className="text-[9px] font-black uppercase text-slate-400">{t("gmcReturned")}</p>
+            <h2 className="text-2xl font-black mt-1">{stats.total}</h2>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-t-emerald-500 border-t-2">
+            <p className="text-[9px] font-black uppercase text-emerald-500">{t("gmcStillLive")}</p>
+            <h2 className="text-2xl font-black text-emerald-600 mt-1">{stats.live}</h2>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-t-red-500 border-t-2">
+            <p className="text-[9px] font-black uppercase text-red-500">{t("gmcSuspended")}</p>
+            <h2 className="text-2xl font-black text-red-600 mt-1">{stats.sus}</h2>
           </div>
         </div>
 
-        {/* TỔNG REG GMC — toàn hệ thống */}
-        <div className="bg-gradient-to-r from-slate-900 to-indigo-900 p-5 rounded-2xl text-white shadow-lg flex flex-wrap items-center gap-6">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-300">{t("totalRegGmc")}</p>
-            <h2 className="text-4xl font-black mt-1">{globalStats.totalAcc}</h2>
-            <p className="text-[10px] font-medium text-slate-400 mt-1">{t("totalRegGmcDesc")}</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-t-indigo-500 border-t-2">
+            <p className="text-[9px] font-black uppercase text-indigo-500">{t("actualFilteredDomains")}</p>
+            <h2 className="text-2xl font-black text-indigo-600 mt-1">{stats.domains}</h2>
           </div>
-          <div className="h-10 w-px bg-white/20 hidden sm:block" />
-          <div className="flex flex-wrap gap-6">
-            <div>
-              <p className="text-[9px] font-bold uppercase text-emerald-400">{t("active")}</p>
-              <p className="text-xl font-black text-emerald-300">{globalStats.totalLive}</p>
-            </div>
-            <div>
-              <p className="text-[9px] font-bold uppercase text-red-400">{t("suspended")}</p>
-              <p className="text-xl font-black text-red-300">{globalStats.totalSus}</p>
-            </div>
-            <div>
-              <p className="text-[9px] font-bold uppercase text-indigo-300">{t("actualFilteredDomains")}</p>
-              <p className="text-xl font-black">{globalStats.totalDomains}</p>
-            </div>
-            <div>
-              <p className="text-[9px] font-bold uppercase text-blue-300">{t("totalAdsCost")}</p>
-              <p className="text-xl font-black text-blue-200">
-                ${globalStats.totalCost.toLocaleString("en-US", formatOptions)}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* DYNAMIC STATS CARDS BLOCK — theo bộ lọc */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
-            <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("totalFilteredRows")}</p>
-              <h2 className="text-2xl font-black text-slate-900 mt-1">
-                {searchDomain ? `${searchStats.totalRows} / ` : ""}{dynamicStats.total}
-              </h2>
-            </div>
-            <p className="text-[9px] font-bold text-slate-300 uppercase mt-3">
-              {searchDomain ? t("matchingSearchResult") : `${t("allFilteredRecords")}: ${globalStats.totalAcc}`}
-            </p>
-          </div>
-
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-indigo-500 border-t-2">
-            <div>
-              <p className="text-[9px] font-black uppercase text-indigo-500 tracking-[0.15em]">{t("actualFilteredDomains")}</p>
-              <div className="flex items-baseline gap-1 mt-1">
-                <h2 className="text-2xl font-black text-indigo-600">{dynamicStats.totalUniqueDomains}</h2>
-              </div>
-            </div>
-            <p className="text-[9px] font-bold text-indigo-400 uppercase mt-3">{t("cleanedDomains")}: {globalStats.totalDomains}</p>
-          </div>
-
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-emerald-500 border-t-2">
-            <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("totalLiveDomains")}</p>
-              <div className="flex items-baseline gap-2 mt-1">
-                <h2 className="text-2xl font-black text-emerald-600">{dynamicStats.live}</h2>
-                <span className="text-[10px] font-bold text-emerald-500/70">
-                  ({dynamicStats.total > 0 ? ((dynamicStats.live / dynamicStats.total) * 100).toFixed(1) : 0}%)
-                </span>
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">
-                {t("searchTotal")}: {globalStats.totalLive}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-red-500 border-t-2">
-            <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">{t("totalSuspendedDomains")}</p>
-              <div className="flex items-baseline gap-2 mt-1">
-                <h2 className="text-2xl font-black text-red-600">{dynamicStats.sus}</h2>
-                <span className="text-[10px] font-bold text-red-500/70">
-                  ({dynamicStats.total > 0 ? ((dynamicStats.sus / dynamicStats.total) * 100).toFixed(1) : 0}%)
-                </span>
-              </div>
-            </div>
-            <p className="text-[9px] font-bold text-red-400 uppercase mt-3">{t("searchTotal")}: {globalStats.totalSus}</p>
-          </div>
-
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all border-t-blue-500 border-t-2">
-            <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">
-                {searchDomain ? t("searchAdsCost") : t("totalAdsCost")}
-              </p>
-              <h2 className="text-2xl font-black text-blue-600 mt-1">
-                ${(searchDomain ? searchStats.totalCost : dynamicStats.totalCost).toLocaleString('en-US', formatOptions)}
-              </h2>
-            </div>
-            <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-3 bg-blue-50 w-max px-2 py-0.5 rounded-md">
-              {t("usdTotal")}: ${globalStats.totalCost.toLocaleString('en-US', formatOptions)}
-            </p>
-          </div>
-        </div>
-
-        {/* PIE CHART & BAR CHART BLOCK */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("systemRatioOverview")}</h3>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={pieChartStats} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                    {pieChartStats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex justify-around mt-4 text-[10px] font-bold uppercase">
-              <div className="flex items-center gap-2 text-emerald-600">● {t("active")}: {dynamicStats.live}</div>
-              <div className="flex items-center gap-2 text-red-500">● {t("suspended")}: {dynamicStats.sus}</div>
-            </div>
-          </div>
-
-          <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-slate-400 mb-6 tracking-widest">{t("accountProductivityByDev")}</h3>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={devProductivityStats}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
-                  <YAxis hide />
-                  <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                  <Bar dataKey="live" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} name={t("active")} />
-                  <Bar dataKey="sus" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={25} name={t("suspended")} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-t-blue-500 border-t-2">
+            <p className="text-[9px] font-black uppercase text-blue-500">{t("totalAdsCost")}</p>
+            <h2 className="text-2xl font-black text-blue-600 mt-1">
+              ${stats.totalCost.toLocaleString("en-US", formatOptions)}
+            </h2>
           </div>
         </div>
 
@@ -450,26 +343,6 @@ function GMCPremiumDashboard() {
             value={searchDomain}
             onChange={(e) => { setSearchDomain(e.target.value); setCurrentPage(1); }}
           />
-
-          <select
-            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100 transition-colors"
-            value={monthFilter}
-            onChange={(e) => { setMonthFilter(e.target.value); setCurrentPage(1); }}
-          >
-            <option value="all">{t("allMonths")}</option>
-            {uniqueMonthsOptions.map(monthStr => (
-              <option key={monthStr} value={monthStr}>{t("monthLabel")} {monthStr}</option>
-            ))}
-          </select>
-
-          <select
-            className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600"
-            value={devFilter}
-            onChange={(e) => { setDevFilter(e.target.value); setCurrentPage(1); }}
-          >
-            <option value="all">{t("filterByDevAll")}</option>
-            {uniqueDevsOptions.map(name => <option key={name} value={name}>{name.toUpperCase()}</option>)}
-          </select>
 
           <select
             className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600"

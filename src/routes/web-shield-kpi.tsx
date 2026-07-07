@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { getWebShieldData, WebShieldRecord } from "@/lib/dataService";
 import { WEB_SHIELD_SHEETS } from "@/lib/sheetConfig";
 import { Pagination } from "@/components/pagination";
+import { DevKpiTabs } from "@/components/dev-kpi-tabs";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
 import { aggregateWeekRows, getCurrentMonthKey, parseIsoDate } from "@/lib/kpiWeek";
 import { useTranslation } from "react-i18next";
@@ -31,6 +32,8 @@ const DEV_COLORS = [
 ];
 
 const UNASSIGNED_DEV = "Chưa gán";
+
+const isWebShieldKpi = (r: WebShieldRecord) => Boolean(r.completedDate && r.month);
 
 function getDevColor(devName: string, allDevs: string[]) {
     const idx = allDevs.indexOf(devName);
@@ -150,6 +153,24 @@ function WebShieldKpiPage() {
         return matchSheet && matchDev;
     }), [records, selectedSheet, selectedDev]);
 
+    const kpiRecords = useMemo(
+        () => recordsForKpi.filter(isWebShieldKpi),
+        [recordsForKpi],
+    );
+
+    const devTabItems = useMemo(() => {
+        const map: Record<string, number> = {};
+        kpiRecords.forEach((r) => {
+            const dev = r.dev || UNASSIGNED_DEV;
+            map[dev] = (map[dev] || 0) + 1;
+        });
+        return Object.entries(map)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count);
+    }, [kpiRecords]);
+
+    const kpiMonth = selectedMonth !== "all" ? selectedMonth : activeKpiMonth;
+
     const zoneARecords = useMemo(() => recordsForKpi.filter((r) => {
         const matchMonth = selectedMonth === "all" || r.month === selectedMonth;
         return matchMonth;
@@ -170,15 +191,13 @@ function WebShieldKpiPage() {
     }, [zoneARecords]);
 
     const topDevInfo = useMemo(() => {
-        const pool = records.filter((r) => {
-            if (!r.dev) return false;
-            if (selectedSheet !== "all" && r.sheetId !== selectedSheet) return false;
-            return selectedMonth === "all" || r.month === selectedMonth;
-        });
+        const pool = kpiRecords.filter((r) => r.month === kpiMonth && r.dev);
         if (!pool.length) return null;
 
         const counts: Record<string, number> = {};
-        pool.forEach((r) => { if (r.dev) counts[r.dev] = (counts[r.dev] || 0) + 1; });
+        pool.forEach((r) => {
+            if (r.dev) counts[r.dev] = (counts[r.dev] || 0) + 1;
+        });
 
         let top = { dev: "", count: 0 };
         Object.entries(counts).forEach(([dev, count]) => {
@@ -186,12 +205,9 @@ function WebShieldKpiPage() {
         });
         if (top.count === 0) return null;
 
-        if (selectedMonth === "all") {
-            return { dev: top.dev, count: top.count, isAllTime: true, year: "", month: 0 };
-        }
-        const [y, m] = selectedMonth.split("-");
-        return { dev: top.dev, count: top.count, isAllTime: false, year: y, month: parseInt(m) };
-    }, [records, selectedMonth, selectedSheet]);
+        const [y, m] = kpiMonth.split("-");
+        return { dev: top.dev, count: top.count, year: y, month: parseInt(m, 10) };
+    }, [kpiRecords, kpiMonth]);
 
     const pieData = useMemo(() => [
         { name: t("statusCompleted", "Completed"), value: currentStats.done, color: "#10b981" },
@@ -225,7 +241,7 @@ function WebShieldKpiPage() {
 
     const monthlyWeb = useMemo(() => {
         const map: Record<string, number> = {};
-        recordsForKpi.forEach((r) => {
+        kpiRecords.forEach((r) => {
             if (!r.month) return;
             map[r.month] = (map[r.month] || 0) + 1;
         });
@@ -235,15 +251,15 @@ function WebShieldKpiPage() {
                 const [y, m] = month.split("-");
                 return { month, label: `M${parseInt(m)}/${y}`, count };
             });
-    }, [recordsForKpi]);
+    }, [kpiRecords]);
 
     const weeklyRows = useMemo(() => aggregateWeekRows(
-        recordsForKpi.map((r) => ({
+        kpiRecords.map((r) => ({
             date: parseIsoDate(r.completedDate),
             group: r.dev || UNASSIGNED_DEV,
             item: r.web,
         })),
-    ), [recordsForKpi]);
+    ), [kpiRecords]);
 
     const paginated = useMemo(() => {
         const start = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -302,6 +318,14 @@ function WebShieldKpiPage() {
                     ))}
                 </div>
 
+                <DevKpiTabs
+                    items={devTabItems}
+                    totalCount={kpiRecords.length}
+                    selected={selectedDev}
+                    onSelect={(dev) => { setSelectedDev(dev); setCurrentPage(1); }}
+                    allLabel={t("allDevsFilter", "ALL DEVS")}
+                />
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
                         <div>
@@ -358,19 +382,17 @@ function WebShieldKpiPage() {
                         <div>
                             <p className="text-[9px] font-black uppercase text-indigo-500 tracking-[0.15em]">
                                 {topDevInfo
-                                    ? topDevInfo.isAllTime
-                                        ? `${t("topDev", "Top Dev")} — ${t("allTime", "All Time")}`
-                                        : `${t("topDev", "Top Dev")} — ${t("monthLabelFormat", { month: topDevInfo.month, year: topDevInfo.year })}`
-                                    : t("activeDevs", "Active Devs")}
+                                    ? `${t("topDev", "Top Dev")} — ${t("monthLabelFormat", { month: topDevInfo.month, year: topDevInfo.year })}`
+                                    : t("topDev", "Top Dev")}
                             </p>
                             <h2 className="text-2xl font-black text-indigo-600 mt-1 truncate">
-                                {topDevInfo ? topDevInfo.dev : currentStats.devCount}
+                                {topDevInfo ? topDevInfo.dev : "—"}
                             </h2>
                         </div>
                         <p className="text-[9px] font-bold text-indigo-300 uppercase mt-3">
                             {topDevInfo
                                 ? t("sitesCompletedCount", { count: topDevInfo.count, defaultValue: `${topDevInfo.count} sites` })
-                                : t("devsInFilterCount", { count: currentStats.devCount, defaultValue: `${currentStats.devCount} devs` })}
+                                : t("noKpiThisMonth", "Chưa có KPI tháng này")}
                         </p>
                     </div>
                 </div>
@@ -424,7 +446,12 @@ function WebShieldKpiPage() {
                     <select
                         className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600"
                         value={selectedMonth}
-                        onChange={(e) => { setSelectedMonth(e.target.value); setCurrentPage(1); }}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            setSelectedMonth(v);
+                            if (v !== "all") setActiveKpiMonth(v);
+                            setCurrentPage(1);
+                        }}
                     >
                         <option value="all">📅 {t("allMonths", "ALL MONTHS")}</option>
                         {allMonths.map((ym) => {
@@ -436,20 +463,12 @@ function WebShieldKpiPage() {
                             );
                         })}
                     </select>
-                    <select
-                        className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600"
-                        value={selectedDev}
-                        onChange={(e) => { setSelectedDev(e.target.value); setCurrentPage(1); }}
-                    >
-                        <option value="all">👤 {t("allDevsFilter", "ALL DEVS")}</option>
-                        {allDevs.map((d) => <option key={d} value={d}>{d.toUpperCase()}</option>)}
-                    </select>
                 </div>
 
                 <MonthWeeklyKpiBlock
                     monthlyData={monthlyWeb}
                     weeklyRows={weeklyRows}
-                    activeMonth={activeKpiMonth}
+                    activeMonth={selectedMonth !== "all" ? selectedMonth : activeKpiMonth}
                     onMonthChange={(m) => { setActiveKpiMonth(m); setSelectedMonth(m); }}
                     groupColumnLabel={t("tableHeaderDev", "Dev")}
                     title={t("monthlyKpiTitle", "KPI theo tháng")}
