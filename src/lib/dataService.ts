@@ -1,4 +1,5 @@
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { DEFAULT_SHEET_LINKS, INFO_WEB_SHEET_ID, REG_KPI_SHEETS, VE_BO_SHEET_ID, WEB_SHIELD_SHEETS } from "./sheetConfig";
 
 const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD ?? DEFAULT_SHEET_LINKS.REBUILD;
@@ -748,6 +749,710 @@ export const getDomainSheetData = async (forceRefresh = false): Promise<DomainSh
     }
 };
 
+/** Map 1 dòng CSV (header giống sheet Chi Phí GMC) → ExpenseRecord | null */
+export const mapExpenseRow = (row: Record<string, string>): ExpenseRecord | null => {
+    const loaiChiPhi = expenseRowVal(
+        row,
+        "Tên chi phí",
+        "Ten chi phi",
+        "Loại chi phí",
+        "Loai chi phi",
+        "Type",
+        "Expense type",
+    );
+    const registrant = expenseRowVal(row, "Tên Reg", "Ten Reg", "Người Reg", "Nguoi Reg", "Registrant");
+    const rawAmount = expenseRowVal(
+        row,
+        "Chi phí (USD)",
+        "Chi phí USD",
+        "Chi phi (USD)",
+        "Chi phí",
+        "Chi phi",
+        "Amount",
+        "Số tiền",
+        "So tien",
+    );
+    const ngayTT = expenseRowVal(
+        row,
+        "Ngày thanh toán",
+        "Ngay thanh toan",
+        "Payment date",
+        "Date",
+        "Ngày",
+    );
+    const choHoanTien = expenseRowVal(row, "Chờ Hoàn tiền", "Chờ hoàn tiền", "Cho Hoan tien", "Refund");
+
+    if (!loaiChiPhi || !registrant) return null;
+    if (!rawAmount && !choHoanTien) return null;
+
+    return {
+        tenReg: registrant,
+        loaiChiPhi,
+        ngayThanhToan: ngayTT,
+        tenWeb: expenseRowVal(row, "Tên web", "Ten web", "Web", "Website"),
+        tenTheAds: expenseRowVal(row, "Tên thẻ ads", "Ten the ads", "Thẻ ads", "Ads card"),
+        dangThe: expenseRowVal(row, "Dạng thẻ", "Dạng thẻ ", "Dong the", "Card type"),
+        chiPhiUSD: parseUSD(rawAmount),
+        chiPhiVND: parseVND(rawAmount),
+        chiPhiUSDT: parseUSDT(rawAmount),
+        chiPhiRaw: rawAmount,
+        choHoanTien,
+        refundStatus: parseRefundStatus(choHoanTien),
+        billChiPhi: expenseRowVal(row, "Bill chi phí", "Bill"),
+        month: parseMonth(ngayTT),
+    };
+};
+
+/** Parse CSV/TSV text (export Google Sheet) thành danh sách chi phí */
+export const parseExpensesFromCsvText = (text: string): ExpenseRecord[] => {
+    const rows = Papa.parse<Record<string, string>>(text, {
+        header: true,
+        skipEmptyLines: true,
+    }).data;
+    const expenses: ExpenseRecord[] = [];
+    for (const row of rows) {
+        const mapped = mapExpenseRow(row);
+        if (mapped) expenses.push(mapped);
+    }
+    return expenses;
+};
+
+const normExpenseText = (s: string) =>
+    (s ?? "")
+        .normalize("NFC")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/đăng kí/g, "đăng ký")
+        .trim();
+
+const normExpenseDate = (raw: string) => {
+    const s = (raw ?? "").trim();
+    const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (dmy) {
+        return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return normExpenseText(s);
+};
+
+const roundMoney = (n: number) => Math.round((n || 0) * 100) / 100;
+
+/** Key khớp chi phí: người reg + loại + ngày + số tiền (+ web/thẻ nếu có) */
+export const expenseMatchKey = (e: ExpenseRecord, strict = true): string => {
+    const base = [
+        normExpenseText(e.tenReg),
+        normExpenseText(e.loaiChiPhi),
+        normExpenseDate(e.ngayThanhToan),
+        `u${roundMoney(e.chiPhiUSD)}`,
+        `v${roundMoney(e.chiPhiVND)}`,
+        `t${roundMoney(e.chiPhiUSDT)}`,
+    ];
+    if (strict) {
+        base.push(normExpenseText(e.tenWeb), normExpenseText(e.tenTheAds));
+    }
+    return base.join("|");
+};
+
+export interface ExpenseReconcileResult {
+    uploadedCount: number;
+    matchedCount: number;
+    matched: ExpenseRecord[];
+    matchedUsd: number;
+    missing: ExpenseRecord[];
+    missingUsd: number;
+    missingVnd: number;
+    missingUsdt: number;
+    totalUsd: number;
+    gmcCount: number;
+}
+
+/**
+ * So sánh sheet upload (format Chi phí GMC) với Chi phí GMC đã lưu.
+ * Mỗi dòng GMC chỉ khớp tối đa 1 dòng upload.
+ */
+export const reconcileExpensesAgainstGmc = (
+    uploaded: ExpenseRecord[],
+    gmc: ExpenseRecord[],
+): ExpenseReconcileResult => {
+    const remaining = gmc.map((e) => ({ e, used: false }));
+
+    const takeMatch = (u: ExpenseRecord) => {
+        const hard = expenseMatchKey(u, true);
+        let hit = remaining.find((r) => !r.used && expenseMatchKey(r.e, true) === hard);
+        if (!hit) {
+            const soft = expenseMatchKey(u, false);
+            hit = remaining.find((r) => !r.used && expenseMatchKey(r.e, false) === soft);
+        }
+        if (!hit) return false;
+        hit.used = true;
+        return true;
+    };
+
+    const missing: ExpenseRecord[] = [];
+    const matched: ExpenseRecord[] = [];
+
+    for (const e of uploaded) {
+        if (takeMatch(e)) matched.push(e);
+        else missing.push(e);
+    }
+
+    const matchedUsd = roundMoney(matched.reduce((s, e) => s + (e.chiPhiUSD || 0) + (e.chiPhiUSDT || 0), 0));
+    const missingUsd = roundMoney(missing.reduce((s, e) => s + (e.chiPhiUSD || 0) + (e.chiPhiUSDT || 0), 0));
+
+    return {
+        uploadedCount: uploaded.length,
+        matchedCount: matched.length,
+        matched,
+        matchedUsd,
+        missing,
+        missingUsd,
+        missingVnd: missing.reduce((s, e) => s + (e.chiPhiVND || 0), 0),
+        missingUsdt: missing.reduce((s, e) => s + (e.chiPhiUSDT || 0), 0),
+        totalUsd: roundMoney(matchedUsd + missingUsd),
+        gmcCount: gmc.length,
+    };
+};
+
+// ─── Card transaction sheet (PhotonPay / card export) ───────────────────────
+
+export interface CardTxnRecord {
+    cardId: string;
+    product: string;
+    productName: string;
+    transactionId: string;
+    cardNo: string;
+    cardLast4: string;
+    cardNickname: string;
+    transactionType: string;
+    status: string;
+    currency: string;
+    amount: number;
+    reversalAmount: number;
+    netAmount: number;
+    merchantName: string;
+    mcc: string;
+    transactionDate: string;
+}
+
+export interface CardTxnReconcileResult {
+    uploadedCount: number;
+    matchedCount: number;
+    matched: CardTxnRecord[];
+    matchedUsd: number;
+    missing: CardTxnRecord[];
+    missingUsd: number;
+    totalUsd: number;
+    skippedCount: number;
+    gmcCount: number;
+}
+
+const cardRowVal = (row: Record<string, string>, ...keys: string[]) => expenseRowVal(row, ...keys);
+
+const parseMoneyCell = (raw: string): number => {
+    if (!raw) return 0;
+    let s = raw.trim().replace(/\$/g, "").replace(/,/g, "").replace(/\s+/g, "");
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+};
+
+const extractCardLast4 = (cardNo: string) => {
+    const digits = (cardNo || "").replace(/\D/g, "");
+    if (digits.length >= 4) return digits.slice(-4);
+    const star = (cardNo || "").match(/\*{2,}(\d{4})/);
+    return star ? star[1] : "";
+};
+
+/** Nhận diện header giao dịch thẻ (CSV hoặc Excel) */
+export const isCardTxnHeaders = (headers: string[]): boolean => {
+    const h = headers.map((x) => String(x ?? "").toLowerCase()).join(" | ");
+    return (
+        h.includes("transaction id") ||
+        (h.includes("merchant name") && h.includes("billing amount")) ||
+        (h.includes("card nickname") && h.includes("transaction amount"))
+    );
+};
+
+/** Nhận diện CSV giao dịch thẻ (có Transaction ID / Merchant Name) */
+export const isCardTxnCsv = (text: string): boolean => {
+    const firstLine = text.split(/\r?\n/).find((l) => l.trim()) || "";
+    return isCardTxnHeaders(firstLine.split(/[,;\t]/));
+};
+
+const formatDisplayDate = (d: Date): string => {
+    if (isNaN(d.getTime())) return "";
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    // Chỉ hiện giờ nếu không phải 00:00
+    if (d.getHours() || d.getMinutes() || d.getSeconds()) {
+        return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+    }
+    return `${dd}/${mm}/${yyyy}`;
+};
+
+const cellToString = (v: unknown): string => {
+    if (v == null) return "";
+    if (v instanceof Date) return formatDisplayDate(v);
+    if (typeof v === "number") {
+        // Excel serial date (~ days since 1899-12-30)
+        if (Number.isFinite(v) && v > 20000 && v < 80000) {
+            const parsed = XLSX.SSF.parse_date_code(v);
+            if (parsed) {
+                const d = new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, parsed.S || 0);
+                return formatDisplayDate(d);
+            }
+        }
+        // Tránh scientific notation cho Card ID / Transaction ID
+        if (Number.isFinite(v) && Math.abs(v) >= 1e12) return Math.trunc(v).toString();
+        return String(v);
+    }
+    return String(v);
+};
+
+/** Đọc Excel (.xlsx/.xls) → mảng object theo header hàng đầu */
+export const parseExcelRows = async (file: File | ArrayBuffer): Promise<Record<string, string>[]> => {
+    const buf = file instanceof File ? await file.arrayBuffer() : file;
+    const wb = XLSX.read(buf, { type: "array", cellDates: true, raw: false });
+    const sheetName = wb.SheetNames[0];
+    if (!sheetName) return [];
+    const sheet = wb.Sheets[sheetName];
+    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+        defval: "",
+        raw: false,
+    });
+    return json.map((row) => {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(row)) {
+            out[String(k).trim()] = cellToString(v).trim();
+        }
+        return out;
+    });
+};
+
+export const parseCardTxnRows = (rows: Record<string, string>[]): CardTxnRecord[] => {
+    const out: CardTxnRecord[] = [];
+    for (const row of rows) {
+        const mapped = mapCardTxnRow(row);
+        if (mapped) out.push(mapped);
+    }
+    return out;
+};
+
+export const parseExpenseRows = (rows: Record<string, string>[]): ExpenseRecord[] => {
+    const out: ExpenseRecord[] = [];
+    for (const row of rows) {
+        const mapped = mapExpenseRow(row);
+        if (mapped) out.push(mapped);
+    }
+    return out;
+};
+
+export const mapCardTxnRow = (row: Record<string, string>): CardTxnRecord | null => {
+    const transactionId = cardRowVal(row, "Transaction ID", "Transaction Id", "Txn ID");
+    const amountRaw = cardRowVal(
+        row,
+        "Billing Amount",
+        "Transaction Amount",
+        "Billing Amount (at settlement)",
+    );
+    if (!transactionId && !amountRaw) return null;
+
+    const amountAbs = Math.abs(parseMoneyCell(amountRaw));
+    const reversalAmount = Math.abs(parseMoneyCell(cardRowVal(row, "Reversal Amount")));
+    const netAmount = Math.max(0, roundMoney(amountAbs - reversalAmount));
+    const cardNo = cardRowVal(row, "Card No.", "Card No", "Card Number");
+    let transactionDate = cardRowVal(
+        row,
+        "Transaction Time",
+        "Transaction Date",
+        "Txn Time",
+        "Txn Date",
+        "Created At",
+        "Create Time",
+        "Posted Date",
+        "Settlement Date",
+        "Date",
+        "Ngày giao dịch",
+        "Thời gian",
+        "Ngay giao dich",
+    );
+    if (!transactionDate) {
+        for (const [k, v] of Object.entries(row)) {
+            const lk = k.toLowerCase();
+            if (
+                v &&
+                (lk.includes("time") || lk.includes("date") || lk.includes("ngày") || lk.includes("ngay"))
+            ) {
+                transactionDate = String(v).trim();
+                break;
+            }
+        }
+    }
+
+    return {
+        cardId: cardRowVal(row, "Card ID", "Card Id"),
+        product: cardRowVal(row, "Product"),
+        productName: cardRowVal(row, "Product Name"),
+        transactionId: transactionId || `${cardNo}-${amountAbs}`,
+        cardNo,
+        cardLast4: extractCardLast4(cardNo),
+        cardNickname: cardRowVal(row, "Card Nickname", "Nickname"),
+        transactionType: cardRowVal(row, "Transaction Type", "Type"),
+        status: cardRowVal(row, "Status"),
+        currency: (cardRowVal(row, "Billing Currency", "Transaction Currency") || "USD").toUpperCase(),
+        amount: amountAbs,
+        reversalAmount,
+        netAmount,
+        merchantName: cardRowVal(row, "Merchant Name", "Merchant"),
+        mcc: cardRowVal(row, "MCC"),
+        transactionDate,
+    };
+};
+
+const isCountableCardTxn = (t: CardTxnRecord) => {
+    const type = t.transactionType.toLowerCase();
+    const status = t.status.toLowerCase();
+    if (type && !type.includes("expense") && !type.includes("chi")) return false;
+    if (status.includes("fail") || status.includes("decline") || status.includes("cancel") || status.includes("void")) {
+        return false;
+    }
+    // Successful / Processing / empty
+    if (status && !status.includes("success") && !status.includes("process") && status !== "") {
+        return false;
+    }
+    if (t.netAmount <= 0) return false;
+    return true;
+};
+
+export const parseCardTxnCsvText = (text: string): CardTxnRecord[] => {
+    const rows = Papa.parse<Record<string, string>>(text, {
+        header: true,
+        skipEmptyLines: true,
+    }).data;
+    return parseCardTxnRows(rows);
+};
+
+const gmcUsdAmount = (e: ExpenseRecord) => roundMoney((e.chiPhiUSD || 0) + (e.chiPhiUSDT || 0));
+
+/** Chỉ loại chi phí + tên web + raw — KHÔNG gồm tên thẻ (tránh "shopify" ở cột thẻ làm Namecheap bị cướp) */
+const gmcMerchantBlob = (e: ExpenseRecord) =>
+    `${e.loaiChiPhi} ${e.tenWeb} ${e.chiPhiRaw}`.toLowerCase();
+
+const gmcHasLast4 = (e: ExpenseRecord, last4: string) => {
+    if (!last4) return false;
+    const blob = `${e.tenTheAds} ${e.dangThe} ${e.chiPhiRaw} ${e.tenWeb} ${e.billChiPhi}`;
+    return blob.replace(/\D/g, "").includes(last4) || blob.includes(last4);
+};
+
+/** Nhóm merchant thẻ → từ khóa khớp sheet Chi phí GMC */
+type MerchantFamily =
+    | "shopify"
+    | "domain"
+    | "ads"
+    | "textverify"
+    | "proxy"
+    | "mail"
+    | "cursor"
+    | "capcut"
+    | "other";
+
+const merchantFamily = (merchant: string): MerchantFamily => {
+    const m = merchant.toLowerCase().replace(/\s+/g, " ");
+    if (m.includes("shopify")) return "shopify";
+    if (m.includes("name-cheap") || m.includes("namecheap") || m.includes("name cheap") || m.includes("godaddy") || m.includes("cloudflare")) {
+        return "domain";
+    }
+    if (m.includes("txvrfy") || m.includes("textverify") || m.includes("txv*")) return "textverify";
+    if (m.includes("rayobyte") || m.includes("rayo") || m.includes("proxy") || m.includes("brightdata") || m.includes("smartproxy")) {
+        return "proxy";
+    }
+    if (m.includes("cursor")) return "cursor";
+    if (m.includes("capcut") || m.includes("cap cut")) return "capcut";
+    if (m.includes("google") && (m.includes("ads") || m.includes("adwords"))) return "ads";
+    if (m.includes("facebook") || m.includes("meta ads") || m.includes("tiktok")) return "ads";
+    if (m.includes("mail") || m.includes("outlook") || m.includes("gmail")) return "mail";
+    return "other";
+};
+
+/** Từ khóa từ cột Merchant (phần trước *) để dò trong sheet Chi phí */
+const merchantKeywords = (merchant: string): string[] => {
+    const raw = (merchant || "").trim();
+    if (!raw) return [];
+    const star = raw.indexOf("*");
+    const head = (star >= 0 ? raw.slice(0, star) : raw.split(/\s+/)[0] || "").trim().toLowerCase();
+    if (!head) return [];
+    const keys = new Set<string>();
+    keys.add(head);
+    keys.add(head.replace(/[^a-z0-9]/g, ""));
+    head.split(/[^a-z0-9]+/).forEach((p) => {
+        if (p.length >= 4) keys.add(p);
+    });
+    return [...keys].filter((k) => k.length >= 3);
+};
+
+const keywordInGmc = (keywords: string[], e: ExpenseRecord): boolean => {
+    if (!keywords.length) return false;
+    const blob = gmcMerchantBlob(e);
+    const compact = blob.replace(/[^a-z0-9]/g, "");
+    return keywords.some((k) => {
+        const ck = k.replace(/[^a-z0-9]/g, "");
+        // Bỏ keyword quá chung: name, com, web…
+        if (ck.length < 5 && !["cursor", "proxy", "txv"].includes(ck)) return false;
+        return blob.includes(k) || (ck.length >= 5 && compact.includes(ck));
+    });
+};
+
+/** Điểm khớp merchant ↔ dòng GMC (càng cao càng đúng). 0 = không liên quan. */
+const merchantGmcScore = (family: MerchantFamily, merchant: string, e: ExpenseRecord): number => {
+    const blob = gmcMerchantBlob(e);
+    const loai = (e.loaiChiPhi || "").toLowerCase();
+    const keys = merchantKeywords(merchant);
+
+    // Khớp trực tiếp tên merchant (CURSOR, CAPCUT…) trong loại/tên web — không dùng cột thẻ
+    if (keywordInGmc(keys, e)) return 100;
+
+    switch (family) {
+        case "textverify":
+            if (loai.includes("textverify") || loai.includes("text verify") || loai.includes("nạp text")) return 100;
+            if (blob.includes("textverify") || blob.includes("txv") || blob.includes("nạp text")) return 90;
+            if (blob.includes("text")) return 40;
+            return 0;
+        case "proxy":
+            if (loai.includes("proxy") || blob.includes("rayobyte") || blob.includes("proxy")) return 100;
+            return 0;
+        case "domain":
+            // NAME-CHEAP trên thẻ ↔ "Mua domain" trên sheet Chi phí GMC
+            if (loai.includes("mua domain") || loai === "domain") return 100;
+            if (loai.includes("domain") || blob.includes("namecheap") || blob.includes("name-cheap")) return 100;
+            return 0;
+        case "shopify":
+            // Chỉ khi loại/web ghi Shopify/host — không dùng "Tên thẻ ads = shopify"
+            if (loai.includes("shopify") || loai.includes("host shopify") || loai.includes("tiền host")) return 100;
+            if (blob.includes("host shopify") || blob.includes("tiền host")) return 100;
+            if (/\bshopify\b/.test(blob) && !loai.includes("domain") && !loai.includes("ads")) return 80;
+            return 0;
+        case "ads":
+            if (loai.includes("ads") || blob.includes("chi phí ads") || blob.includes("quảng")) return 100;
+            return 0;
+        case "mail":
+            if (loai.includes("mail") || blob.includes("mua mail")) return 100;
+            return 0;
+        case "cursor":
+        case "capcut":
+        case "other":
+            if (loai.includes("khác") || loai.includes("khac") || loai.includes("other")) return 55;
+            return 0;
+        default:
+            return 0;
+    }
+};
+
+const sameDay = (txnDate: string, gmcDate: string) => {
+    const a = normExpenseDate(txnDate);
+    const b = normExpenseDate(gmcDate);
+    if (!a || !b || a.length < 10 || b.length < 10) return false;
+    return a.slice(0, 10) === b.slice(0, 10);
+};
+
+const isUsdTxn = (t: CardTxnRecord) => !t.currency || t.currency === "USD" || t.currency === "USDT";
+
+/**
+ * So khớp giao dịch thẻ với Chi phí GMC — nhiều vòng.
+ * Ưu tiên cùng ngày + tên merchant trong sheet (vd "gia hạn Cursor") trước,
+ * tránh GD khác cùng số tiền cướp dòng đã note.
+ */
+export const reconcileCardTxnsAgainstGmc = (
+    txns: CardTxnRecord[],
+    gmc: ExpenseRecord[],
+): CardTxnReconcileResult => {
+    const countable = txns.filter(isCountableCardTxn);
+    const skippedCount = txns.length - countable.length;
+
+    // Giữ cả dòng GMC amount = 0 nếu có ghi chú merchant (thiếu số tiền trên sheet)
+    const remaining = gmc.map((e) => ({ e, used: false }));
+
+    const matchedFlags = new Array(countable.length).fill(false);
+
+    const unused = () => remaining.filter((r) => !r.used);
+    const unusedByAmount = (amt: number) =>
+        unused().filter((r) => gmcUsdAmount(r.e) === amt);
+
+    const claim = (r: { e: ExpenseRecord; used: boolean }, idx: number) => {
+        r.used = true;
+        matchedFlags[idx] = true;
+    };
+
+    /** Dòng GMC đang “dành” cho merchant khác chưa khớp (có keyword rõ) */
+    const reservedForOtherMerchant = (
+        gmcRow: ExpenseRecord,
+        current: CardTxnRecord,
+    ) => {
+        const currentKeys = merchantKeywords(current.merchantName);
+        if (keywordInGmc(currentKeys, gmcRow)) return false;
+        for (let i = 0; i < countable.length; i++) {
+            if (matchedFlags[i]) continue;
+            const other = countable[i];
+            if (other === current) continue;
+            const keys = merchantKeywords(other.merchantName);
+            if (keys.length && keywordInGmc(keys, gmcRow)) return true;
+        }
+        return false;
+    };
+
+    const scoredCandidates = (
+        t: CardTxnRecord,
+        opts: { minScore: number; requireSameDay?: boolean; allowZeroAmount?: boolean },
+    ) => {
+        const family = merchantFamily(t.merchantName);
+        const amt = roundMoney(t.netAmount);
+        const pool = unused().filter((r) => {
+            const gAmt = gmcUsdAmount(r.e);
+            if (opts.allowZeroAmount) return gAmt === amt || gAmt === 0;
+            return gAmt === amt;
+        });
+        return pool
+            .map((r) => ({
+                r,
+                score: merchantGmcScore(family, t.merchantName, r.e),
+                day: sameDay(t.transactionDate, r.e.ngayThanhToan),
+            }))
+            .filter((x) => x.score >= opts.minScore)
+            .filter((x) => !opts.requireSameDay || x.day)
+            .filter((x) => !reservedForOtherMerchant(x.r.e, t))
+            .sort((a, b) => Number(b.day) - Number(a.day) || b.score - a.score);
+    };
+
+    // Pass 1a: cùng tiền + keyword/merchant mạnh + CÙNG NGÀY
+    countable.forEach((t, idx) => {
+        if (matchedFlags[idx] || !isUsdTxn(t)) return;
+        const hit = scoredCandidates(t, { minScore: 70, requireSameDay: true })[0];
+        if (hit) claim(hit.r, idx);
+    });
+
+    // Pass 1b: cùng tiền + keyword/merchant mạnh (không bắt buộc ngày)
+    countable.forEach((t, idx) => {
+        if (matchedFlags[idx] || !isUsdTxn(t)) return;
+        const hit = scoredCandidates(t, { minScore: 70 })[0];
+        if (hit) claim(hit.r, idx);
+    });
+
+    // Pass 1c: GMC ghi merchant nhưng thiếu/để trống số tiền — vẫn tính đã note nếu keyword + (cùng ngày hoặc chỉ 1 ứng viên)
+    countable.forEach((t, idx) => {
+        if (matchedFlags[idx] || !isUsdTxn(t)) return;
+        const keys = merchantKeywords(t.merchantName);
+        if (!keys.length) return;
+        const zeroHits = unused()
+            .filter((r) => gmcUsdAmount(r.e) === 0 && keywordInGmc(keys, r.e))
+            .map((r) => ({ r, day: sameDay(t.transactionDate, r.e.ngayThanhToan) }))
+            .sort((a, b) => Number(b.day) - Number(a.day));
+        if (zeroHits.length === 1) claim(zeroHits[0].r, idx);
+        else if (zeroHits[0]?.day) claim(zeroHits[0].r, idx);
+    });
+
+    // Pass 2: amount + card last4 (không lấy dòng đang reserved cho merchant khác)
+    countable.forEach((t, idx) => {
+        if (matchedFlags[idx] || !t.cardLast4 || !isUsdTxn(t)) return;
+        const amt = roundMoney(t.netAmount);
+        const hit = unusedByAmount(amt).find(
+            (r) => gmcHasLast4(r.e, t.cardLast4) && !reservedForOtherMerchant(r.e, t),
+        );
+        if (hit) claim(hit, idx);
+    });
+
+    // Pass 3: amount + medium score (chi phí khác…) — ưu tiên cùng ngày
+    countable.forEach((t, idx) => {
+        if (matchedFlags[idx] || !isUsdTxn(t)) return;
+        const hit = scoredCandidates(t, { minScore: 50, requireSameDay: true })[0]
+            ?? scoredCandidates(t, { minScore: 50 })[0];
+        if (hit) claim(hit.r, idx);
+    });
+
+    // Pass 4: amount + cùng ngày (không reserved)
+    countable.forEach((t, idx) => {
+        if (matchedFlags[idx] || !isUsdTxn(t) || !t.transactionDate) return;
+        const amt = roundMoney(t.netAmount);
+        const sameDayHits = unusedByAmount(amt).filter(
+            (r) => sameDay(t.transactionDate, r.e.ngayThanhToan) && !reservedForOtherMerchant(r.e, t),
+        );
+        if (sameDayHits.length === 1) {
+            claim(sameDayHits[0], idx);
+            return;
+        }
+        if (sameDayHits.length > 1) {
+            const family = merchantFamily(t.merchantName);
+            const ranked = sameDayHits
+                .map((r) => ({ r, score: merchantGmcScore(family, t.merchantName, r.e) }))
+                .sort((a, b) => b.score - a.score);
+            claim(ranked[0].r, idx);
+        }
+    });
+
+    // Pass 5: ghép 1-1 theo số tiền (bỏ Shopify ≤ $2; không lấy dòng reserved)
+    const amountKeys = new Set(
+        countable
+            .filter((t, idx) => !matchedFlags[idx] && isUsdTxn(t))
+            .map((t) => roundMoney(t.netAmount)),
+    );
+    for (const amt of amountKeys) {
+        const txnIdxs = countable
+            .map((t, idx) => ({ t, idx }))
+            .filter(({ t, idx }) => !matchedFlags[idx] && isUsdTxn(t) && roundMoney(t.netAmount) === amt)
+            .filter(({ t }) => !(merchantFamily(t.merchantName) === "shopify" && amt <= 2));
+        if (!txnIdxs.length) continue;
+
+        for (const { t, idx } of txnIdxs) {
+            if (matchedFlags[idx]) continue;
+            const family = merchantFamily(t.merchantName);
+            const freeGmc = unusedByAmount(amt).filter((r) => !reservedForOtherMerchant(r.e, t));
+            if (!freeGmc.length) continue;
+            freeGmc.sort((a, b) => {
+                const dayA = Number(sameDay(t.transactionDate, a.e.ngayThanhToan));
+                const dayB = Number(sameDay(t.transactionDate, b.e.ngayThanhToan));
+                if (dayA !== dayB) return dayB - dayA;
+                return merchantGmcScore(family, t.merchantName, b.e) - merchantGmcScore(family, t.merchantName, a.e);
+            });
+            claim(freeGmc[0], idx);
+        }
+    }
+
+    // Pass 6: còn đúng 1 ứng viên GMC cùng số tiền
+    countable.forEach((t, idx) => {
+        if (matchedFlags[idx] || !isUsdTxn(t)) return;
+        const amt = roundMoney(t.netAmount);
+        if (merchantFamily(t.merchantName) === "shopify" && amt <= 2) return;
+        const candidates = unusedByAmount(amt).filter((r) => !reservedForOtherMerchant(r.e, t));
+        if (candidates.length === 1) claim(candidates[0], idx);
+    });
+
+    const matched: CardTxnRecord[] = [];
+    const missing: CardTxnRecord[] = [];
+    countable.forEach((t, idx) => {
+        if (!isUsdTxn(t)) {
+            missing.push(t);
+            return;
+        }
+        if (matchedFlags[idx]) matched.push(t);
+        else missing.push(t);
+    });
+
+    const matchedUsd = roundMoney(matched.reduce((s, t) => s + t.netAmount, 0));
+    const missingUsd = roundMoney(missing.reduce((s, t) => s + t.netAmount, 0));
+
+    return {
+        uploadedCount: countable.length,
+        matchedCount: matched.length,
+        matched,
+        matchedUsd,
+        missing,
+        missingUsd,
+        totalUsd: roundMoney(matchedUsd + missingUsd),
+        skippedCount,
+        gmcCount: gmc.length,
+    };
+};
+
 /** Chỉ lấy bảng chi phí tab Chi Phí GMC (kèm Chờ Hoàn tiền, Dạng thẻ) */
 export const getChiPhiExpenses = async (forceRefresh = false): Promise<ExpenseRecord[]> => {
     if (cachedChiPhiExpenses && !forceRefresh) return cachedChiPhiExpenses;
@@ -756,43 +1461,7 @@ export const getChiPhiExpenses = async (forceRefresh = false): Promise<ExpenseRe
         const ts = Date.now();
         const sep = LINK_INVOICES_GMC.includes("?") ? "&" : "?";
         const text = await fetch(`${LINK_INVOICES_GMC}${sep}t=${ts}`, { cache: "no-store" }).then((r) => r.text());
-        const rows = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true }).data;
-
-        const expenses: ExpenseRecord[] = [];
-        for (const row of rows) {
-            const loaiChiPhi = expenseRowVal(row, "Tên chi phí");
-            const registrant = expenseRowVal(row, "Tên Reg");
-            const rawAmount = expenseRowVal(row, "Chi phí (USD)", "Chi phí USD", "Chi phí");
-            const ngayTT = expenseRowVal(row, "Ngày thanh toán");
-            const choHoanTien = expenseRowVal(row, "Chờ Hoàn tiền", "Chờ hoàn tiền", "Cho Hoan tien");
-
-            if (!loaiChiPhi || !registrant) continue;
-            // Cho phép dòng cost = 0 nếu có trạng thái hoàn tiền
-            if (!rawAmount && !choHoanTien) continue;
-
-            const chiPhiUSD = parseUSD(rawAmount);
-            const chiPhiVND = parseVND(rawAmount);
-            const chiPhiUSDT = parseUSDT(rawAmount);
-            const refundStatus = parseRefundStatus(choHoanTien);
-
-            expenses.push({
-                tenReg: registrant,
-                loaiChiPhi,
-                ngayThanhToan: ngayTT,
-                tenWeb: expenseRowVal(row, "Tên web"),
-                tenTheAds: expenseRowVal(row, "Tên thẻ ads"),
-                dangThe: expenseRowVal(row, "Dạng thẻ", "Dạng thẻ ", "Dong the"),
-                chiPhiUSD,
-                chiPhiVND,
-                chiPhiUSDT,
-                chiPhiRaw: rawAmount,
-                choHoanTien,
-                refundStatus,
-                billChiPhi: expenseRowVal(row, "Bill chi phí"),
-                month: parseMonth(ngayTT),
-            });
-        }
-
+        const expenses = parseExpensesFromCsvText(text);
         cachedChiPhiExpenses = expenses;
         return expenses;
     } catch (err) {

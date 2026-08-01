@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WordpressRouteImport } from './routes/wordpress'
 import { Route as WebShieldKpiRouteImport } from './routes/web-shield-kpi'
 import { Route as WebKpiRouteImport } from './routes/web-kpi'
+import { Route as ShopifyCostCheckRouteImport } from './routes/shopify-cost-check'
 import { Route as ShopifyRouteImport } from './routes/shopify'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
@@ -37,6 +38,11 @@ const WebShieldKpiRoute = WebShieldKpiRouteImport.update({
 const WebKpiRoute = WebKpiRouteImport.update({
   id: '/web-kpi',
   path: '/web-kpi',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShopifyCostCheckRoute = ShopifyCostCheckRouteImport.update({
+  id: '/shopify-cost-check',
+  path: '/shopify-cost-check',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShopifyRoute = ShopifyRouteImport.update({
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
+  '/shopify-cost-check': typeof ShopifyCostCheckRoute
   '/web-kpi': typeof WebKpiRoute
   '/web-shield-kpi': typeof WebShieldKpiRoute
   '/wordpress': typeof WordpressRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
+  '/shopify-cost-check': typeof ShopifyCostCheckRoute
   '/web-kpi': typeof WebKpiRoute
   '/web-shield-kpi': typeof WebShieldKpiRoute
   '/wordpress': typeof WordpressRoute
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
+  '/shopify-cost-check': typeof ShopifyCostCheckRoute
   '/web-kpi': typeof WebKpiRoute
   '/web-shield-kpi': typeof WebShieldKpiRoute
   '/wordpress': typeof WordpressRoute
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/shopify'
+    | '/shopify-cost-check'
     | '/web-kpi'
     | '/web-shield-kpi'
     | '/wordpress'
@@ -174,6 +184,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/shopify'
+    | '/shopify-cost-check'
     | '/web-kpi'
     | '/web-shield-kpi'
     | '/wordpress'
@@ -190,6 +201,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/shopify'
+    | '/shopify-cost-check'
     | '/web-kpi'
     | '/web-shield-kpi'
     | '/wordpress'
@@ -207,6 +219,7 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   ShopifyRoute: typeof ShopifyRoute
+  ShopifyCostCheckRoute: typeof ShopifyCostCheckRoute
   WebKpiRoute: typeof WebKpiRoute
   WebShieldKpiRoute: typeof WebShieldKpiRoute
   WordpressRoute: typeof WordpressRoute
@@ -233,6 +246,13 @@ declare module '@tanstack/react-router' {
       path: '/web-kpi'
       fullPath: '/web-kpi'
       preLoaderRoute: typeof WebKpiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shopify-cost-check': {
+      id: '/shopify-cost-check'
+      path: '/shopify-cost-check'
+      fullPath: '/shopify-cost-check'
+      preLoaderRoute: typeof ShopifyCostCheckRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/shopify': {
@@ -327,6 +347,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   ShopifyRoute: ShopifyRoute,
+  ShopifyCostCheckRoute: ShopifyCostCheckRoute,
   WebKpiRoute: WebKpiRoute,
   WebShieldKpiRoute: WebShieldKpiRoute,
   WordpressRoute: WordpressRoute,

@@ -231,6 +231,7 @@ function RootComponent() {
     { to: "/web-shield-kpi", labelKey: "webShieldKpi", icon: "🛡️" },
     { to: "/invoices", labelKey: "chiPhi", icon: "💰" },
     { to: "/shopify", labelKey: "shopifyMgmt", icon: "🛒" },
+    { to: "/shopify-cost-check", labelKey: "shopifyCostNav", icon: "🔎", nested: true },
     { to: "/profile", labelKey: "profile", icon: "👤" },
   ];
 
@@ -248,8 +249,12 @@ function RootComponent() {
       <Link
         key={item.to}
         to={item.to as any}
-        activeOptions={{ exact: item.exact ?? false }}
-        className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all font-medium text-slate-600 hover:bg-slate-50 data-[status=active]:bg-slate-900 data-[status=active]:text-white data-[status=active]:shadow-lg data-[status=active]:shadow-slate-200"
+        activeOptions={{ exact: (item as { exact?: boolean }).exact ?? false }}
+        className={`flex items-center gap-3 py-2.5 rounded-xl transition-all font-medium text-slate-600 hover:bg-slate-50 data-[status=active]:bg-slate-900 data-[status=active]:text-white data-[status=active]:shadow-lg data-[status=active]:shadow-slate-200 ${
+          (item as { nested?: boolean }).nested
+            ? "ml-4 pl-3 pr-3 text-sm border-l-2 border-slate-200"
+            : "px-3"
+        }`}
       >
         <span className="text-lg">{item.icon}</span>
         <span>{t(item.labelKey)}</span>
