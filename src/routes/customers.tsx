@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getGMCRegData, isValidGmcWebDomain } from "../lib/dataService";
 import { DevKpiTabs } from "@/components/dev-kpi-tabs";
+import { GmcKpiSummaryTable } from "@/components/gmc-kpi-summary-table";
 import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { Pagination } from "../components/pagination";
 import { fmtMonthShort, getCurrentMonthKey, parseDmyDate } from "@/lib/kpiWeek";
@@ -117,12 +118,22 @@ function GMCPremiumDashboard() {
     return s.includes("sus") || s === "die" || s.includes("đã sus") || s.includes("về sus");
   };
 
-  // Chuẩn hóa chuỗi tiền tệ từ "10,5" thành số thực 10.5
+  /** Chi phí Ads: "25 $", "20k", "20 k", "10,5" → USD ("k" = ×1000) */
   const parseCost = (costStr: string | undefined): number => {
     if (!costStr) return 0;
-    const normalized = costStr.replace(",", ".").trim();
-    const parsed = parseFloat(normalized);
-    return isNaN(parsed) ? 0 : parsed;
+    let s = costStr.trim().toLowerCase().replace(/\s+/g, " ");
+    if (s.includes("vnd") || s.includes("₫") || s.includes("usdt")) return 0;
+    s = s.replace(/\$/g, "").replace(/\busd\b/g, "").trim();
+    let multiply = 1;
+    const kMatch = s.match(/^([\d.,]+)\s*k$/);
+    if (kMatch) {
+      s = kMatch[1];
+      multiply = 1000;
+    }
+    if (s.includes(",") && !s.includes(".")) s = s.replace(/,/g, ".");
+    else s = s.replace(/,/g, "");
+    const parsed = parseFloat(s);
+    return isNaN(parsed) ? 0 : parsed * multiply;
   };
 
   const parseDmyDateLocal = (dateStr: string): Date | null => parseDmyDate(dateStr);
@@ -207,6 +218,25 @@ function GMCPremiumDashboard() {
     const totalCost = monthPool.reduce((sum, item) => sum + parseCost(item.cost), 0);
     return { total, live, sus, domains, totalCost };
   }, [monthPool]);
+
+  const kpiEmployees = useMemo(() => {
+    const set = new Set<string>();
+    regData.forEach((item) => {
+      const dev = item.dev?.trim();
+      if (dev) set.add(dev);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "vi"));
+  }, [regData]);
+
+  const kpiTableRows = useMemo(
+    () => regData.map((item) => ({
+      dev: item.dev?.trim() || "",
+      dateGMC: item.dateGMC,
+      greenDays: calculateGreenDays(item),
+      suspended: isSuspended(item.status),
+    })),
+    [regData],
+  );
 
   // ==========================================
   // ZONE 1: FILTER BY DROPDOWN CATEGORY
@@ -305,6 +335,13 @@ function GMCPremiumDashboard() {
               : t("gmcMonthStatsLabel", { month: fmtMonthShort(activeMonth) })}
           </p>
         </div>
+
+        <GmcKpiSummaryTable
+          rows={kpiTableRows}
+          employees={kpiEmployees}
+          monthKey={activeMonth}
+          parseMonth={parseGmcMonth}
+        />
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm border-t-slate-800 border-t-2">

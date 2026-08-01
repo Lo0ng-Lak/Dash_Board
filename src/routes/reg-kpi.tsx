@@ -6,6 +6,7 @@ import { getRegKpiData, RegKpiRecord } from "@/lib/dataService";
 import { REG_KPI_SHEETS } from "@/lib/sheetConfig";
 import { Pagination } from "@/components/pagination";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
+import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { aggregateWeekRows, getCurrentMonthKey, parseDmyDate } from "@/lib/kpiWeek";
 
 const ITEMS = 12;
@@ -48,7 +49,7 @@ function RegKpiPage() {
   const { t } = useTranslation();
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [monthFilter, setMonthFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState("");
   const [activeKpiMonth, setActiveKpiMonth] = useState(getCurrentMonthKey);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -59,6 +60,43 @@ function RegKpiPage() {
     refetchInterval: 30000,
   });
 
+  const ownerPool = useMemo(
+    () => (ownerFilter === "all" ? records : records.filter((r) => r.ownerId === ownerFilter)),
+    [records, ownerFilter],
+  );
+
+  const latestMonth = useMemo(() => {
+    const months = ownerPool
+      .map((r) => parseRegMonth(r.dateRegGmc))
+      .filter(Boolean) as string[];
+    if (!months.length) return getCurrentMonthKey();
+    return months.sort((a, b) => b.localeCompare(a))[0];
+  }, [ownerPool]);
+
+  useEffect(() => {
+    setMonthFilter(latestMonth);
+    setPage(1);
+  }, [ownerFilter, latestMonth]);
+
+  const activeMonth = monthFilter === "all" ? "all" : (monthFilter || latestMonth);
+
+  const monthTabItems = useMemo(() => {
+    const map: Record<string, number> = {};
+    ownerPool.forEach((r) => {
+      const m = parseRegMonth(r.dateRegGmc);
+      if (!m) return;
+      map[m] = (map[m] || 0) + 1;
+    });
+    return Object.entries(map)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([month, count]) => ({ month, count }));
+  }, [ownerPool]);
+
+  const monthPool = useMemo(() => {
+    if (activeMonth === "all") return ownerPool;
+    return ownerPool.filter((r) => parseRegMonth(r.dateRegGmc) === activeMonth);
+  }, [ownerPool, activeMonth]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return records.filter((r) => {
@@ -67,21 +105,11 @@ function RegKpiPage() {
       const matchStatus = statusFilter === "all"
         ? true
         : statusFilter === "live" ? live : !live;
-      const matchMonth = monthFilter === "all" || parseRegMonth(r.dateRegGmc) === monthFilter;
+      const matchMonth = activeMonth === "all" || parseRegMonth(r.dateRegGmc) === activeMonth;
       const matchSearch = !q || r.domain.includes(q) || r.note.toLowerCase().includes(q);
       return matchOwner && matchStatus && matchMonth && matchSearch;
     });
-  }, [records, ownerFilter, statusFilter, monthFilter, search]);
-
-  const ownerPool = useMemo(
-    () => (ownerFilter === "all" ? records : records.filter((r) => r.ownerId === ownerFilter)),
-    [records, ownerFilter],
-  );
-
-  const monthOptions = useMemo(
-    () => [...new Set(records.map((r) => parseRegMonth(r.dateRegGmc)).filter(Boolean) as string[])].sort((a, b) => b.localeCompare(a)),
-    [records],
-  );
+  }, [records, ownerFilter, statusFilter, activeMonth, search]);
 
   const monthlyReg = useMemo(() => {
     const map: Record<string, number> = {};
@@ -106,7 +134,7 @@ function RegKpiPage() {
   ), [ownerPool]);
 
   const stats = useMemo(() => {
-    const pool = ownerPool;
+    const pool = monthPool;
     const total = pool.length;
     const live = pool.filter((r) => isLive(r.susStatus)).length;
     const sus = total - live;
@@ -115,14 +143,14 @@ function RegKpiPage() {
     const khangPass = pool.filter((r) =>
       isPass(r.ketQua1) || isPass(r.ketQua2) || isPass(r.ketQua3)).length;
     return { total, live, sus, khangFail, khangPass };
-  }, [ownerPool]);
+  }, [monthPool]);
 
   const paginated = useMemo(() => {
     const start = (page - 1) * ITEMS;
     return filtered.slice(start, start + ITEMS);
   }, [filtered, page]);
 
-  useEffect(() => { setPage(1); }, [ownerFilter, statusFilter, monthFilter, search]);
+  useEffect(() => { setPage(1); }, [ownerFilter, statusFilter, activeMonth, search]);
 
   if (isLoading) {
     return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">{t("loadingSystemData")}</div>;
@@ -135,6 +163,19 @@ function RegKpiPage() {
         <div className="space-y-1">
           <h1 className="text-3xl font-black tracking-tight">{t("regKpiTitle")}</h1>
           <p className="text-slate-500 font-medium text-sm">{t("regKpiDesc")}</p>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
+            {t("kpiMonthFilterReg")}
+          </p>
+          <MonthFilterTabs
+            items={monthTabItems}
+            totalWithDate={ownerPool.filter((r) => parseRegMonth(r.dateRegGmc)).length}
+            selected={activeMonth}
+            onSelect={(m) => { setMonthFilter(m); if (m !== "all") setActiveKpiMonth(m); setPage(1); }}
+            allLabel={t("allMonths")}
+          />
         </div>
 
         {/* Tabs theo người */}
@@ -194,7 +235,7 @@ function RegKpiPage() {
         <MonthWeeklyKpiBlock
           monthlyData={monthlyReg}
           weeklyRows={weeklyRows}
-          activeMonth={monthFilter !== "all" ? monthFilter : activeKpiMonth}
+          activeMonth={activeMonth !== "all" ? activeMonth : activeKpiMonth}
           onMonthChange={(m) => { setActiveKpiMonth(m); setMonthFilter(m); }}
           groupColumnLabel={t("owner", "Người")}
           title={t("monthlyRegTitle")}
@@ -211,20 +252,6 @@ function RegKpiPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <select
-            className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer"
-            value={monthFilter}
-            onChange={(e) => {
-              const v = e.target.value;
-              setMonthFilter(v);
-              if (v !== "all") setActiveKpiMonth(v);
-            }}
-          >
-            <option value="all">📅 {t("allMonths")}</option>
-            {monthOptions.map((m) => (
-              <option key={m} value={m}>{t("monthLabel")} {fmtMonthKey(m)}</option>
-            ))}
-          </select>
           <select
             className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer"
             value={statusFilter}

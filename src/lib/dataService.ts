@@ -442,20 +442,55 @@ export interface DomainRecord {
     trangThai: string;      // "Active" | ...
 }
 
+export type RefundStatus = "none" | "pending" | "refunded";
+
 export interface ExpenseRecord {
     tenReg: string;
-    loaiChiPhi: string;    // "Mua domain" | "Chi phí ADS" | "Đăng ký GMC" | "Mua mail"
+    loaiChiPhi: string;    // "Mua domain" | "Chi phí ADS" | "Đăng ký GMC" | "Mua mail" | ...
     ngayThanhToan: string; // raw "DD/MM/YYYY"
     tenWeb: string;
     tenTheAds: string;
+    dangThe: string;       // Dạng thẻ
     chiPhiUSD: number;     // 0 if VND-only row
-    chiPhiVND: number;     // 0 if USD row; parsed from "50k" → 50000, "100k" → 100000
-    chiPhiUSDT: number;    // 0 if non-USDT row; parsed from "10 usdt" → 10
+    chiPhiVND: number;     // 0 if USD row
+    chiPhiUSDT: number;    // 0 if non-USDT row
     chiPhiRaw: string;     // original cell value (for display)
+    choHoanTien: string;   // raw "Chờ hoàn tiền" | "Đã hoàn" | ""
+    refundStatus: RefundStatus;
     billChiPhi: string;    // URL ảnh
     // derived
     month: string | null;  // "YYYY-MM"
 }
+
+/** Parse cột Chờ Hoàn tiền trên sheet Chi Phí GMC */
+export const parseRefundStatus = (raw: string): RefundStatus => {
+    const s = (raw ?? "").toLowerCase().normalize("NFC").trim();
+    if (!s) return "none";
+    if (s.includes("đã hoàn") || s.includes("da hoan") || s === "hoàn" || s === "hoan") return "refunded";
+    if (
+        s.includes("chờ hoàn") ||
+        s.includes("cho hoan") ||
+        s.includes("chờ hoàn tiền") ||
+        s.includes("hoàn tiền") ||
+        s.includes("hoan tien") ||
+        s.includes("chờ")
+    ) return "pending";
+    return "none";
+};
+
+const expenseRowVal = (row: Record<string, string>, ...keys: string[]) => {
+    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+    for (const key of keys) {
+        const exact = row[key];
+        if (exact != null && String(exact).trim()) return cleanCell(String(exact));
+    }
+    for (const [k, v] of Object.entries(row)) {
+        if (keys.some((key) => norm(k) === norm(key)) && v != null && String(v).trim()) {
+            return cleanCell(String(v));
+        }
+    }
+    return "";
+};
 
 export interface DomainSheetData {
     domains: DomainRecord[];
@@ -471,64 +506,57 @@ const cleanCell = (val: string | undefined) =>
 
 
 
-/** Parse USD value: "$1,234.56" or "71,98" → 71.98 */
-/** 3. PARSE USD: Nhận diện số thuần "17,7" hoặc có dấu "$" / chữ "usd" */
+/**
+ * Parse USD from Chi phí (USD) column.
+ * "25 $", "25$", "25 usd", "20k", "20 k", "71,98" → USD number.
+ * "k" = nghìn → "20k" = $20,000.
+ */
 const parseUSD = (val: string): number => {
     if (!val) return 0;
-    let normalized = val.trim().toLowerCase();
+    let normalized = val.trim().toLowerCase().replace(/\s+/g, " ");
 
-    // CHẶN: Nếu chứa chữ vnd, k, usdt thì đây không phải là tiền USD
+    // Explicit VND / USDT → not USD
     if (
         normalized.includes("vnd") ||
         normalized.includes("₫") ||
-        normalized.includes("đ") ||
-        normalized.includes("usdt") ||
-        normalized.endsWith("k")
+        /\bđ\b/.test(normalized) ||
+        normalized.includes("usdt")
     ) {
         return 0;
     }
 
-    // Xóa ký tự $ hoặc chữ usd nếu có gõ kèm
-    normalized = normalized.replace(/\$/g, "").replace(/usd/g, "").trim();
+    // Strip $ / usd
+    normalized = normalized.replace(/\$/g, "").replace(/\busd\b/g, "").trim();
 
-    // ĐẶC BIỆT XỬ LÝ CHO HÌNH CỦA BẠN: "71,98" hoặc "29,5" -> đổi thành "71.98" và "29.5" để JS hiểu
+    // "20k" / "20 k" → ×1000 USD (cột giá $)
+    let multiply = 1;
+    const kMatch = normalized.match(/^([\d.,]+)\s*k$/);
+    if (kMatch) {
+        normalized = kMatch[1];
+        multiply = 1000;
+    }
+
     if (normalized.includes(",") && !normalized.includes(".")) {
         normalized = normalized.replace(/,/g, ".");
+    } else {
+        normalized = normalized.replace(/,/g, "");
     }
 
     const numberValue = parseFloat(normalized);
-    return isNaN(numberValue) ? 0 : numberValue;
+    return isNaN(numberValue) ? 0 : numberValue * multiply;
 };
-/** Parse VND value: "50k" → 50000 | "100k" → 100000 | "1.5k" → 1500 | "1.000.000" → 1000000 */
-// const parseVND = (val: string): number => {
-//     if (!val) return 0;
-//     const trimmed = val.trim();
-//     const kMatch = trimmed.match(/^([\d.,]+)vnd$/i);
-//     if (!kMatch) return 0;
-//     const n = parseFloat(kMatch[1].replace(/,/g, "."));
-//     return isNaN(n) ? 0 : n * 1000;
-// };
 
+/** Parse VND: chỉ khi ghi rõ VND / ₫ / đ — không lấy "20k" (đó là USD trong cột Chi phí USD) */
 const parseVND = (val: string): number => {
     if (!val) return 0;
-    const trimmed = val.trim().toLowerCase();
+    const trimmed = val.trim().toLowerCase().replace(/\s+/g, " ");
 
-    // Loại trừ nghiêm ngặt nếu dòng đó thuộc về USD hoặc USDT
     if (trimmed.includes("usdt") || trimmed.includes("usd") || trimmed.includes("$")) return 0;
 
-    // Xử lý các dòng đuôi "k" (nếu có: 50k, 1.5k)
-    const kMatch = trimmed.match(/^([\d.,]+)k$/);
-    if (kMatch) {
-        const n = parseFloat(kMatch[1].replace(/,/g, "."));
-        return isNaN(n) ? 0 : n * 1000;
-    }
-
-    // Xử lý đúng các dòng trong hình: "50 VND", "100 VND"
+    // "50 VND", "100₫", "50 đ"
     const vndMatch = trimmed.match(/^([\d.,]+)\s*(vnd|₫|đ)$/);
     if (vndMatch) {
-        // Đổi dấu phẩy thành dấu chấm đề phòng bạn gõ "1,5 VND" -> 1.5
         const n = parseFloat(vndMatch[1].replace(/,/g, "."));
-        // Nhân với 1000 theo ý bạn: 50 VND -> 50.000₫
         return isNaN(n) ? 0 : n * 1000;
     }
 
@@ -691,17 +719,20 @@ export const getDomainSheetData = async (forceRefresh = false): Promise<DomainSh
 
             if (loaiChiPhi && hasRegistrant && hasAmount) {
                 const ngayTT = c(iNgayTT);
+                const choHoanRaw = "";
                 expenses.push({
                     tenReg: registrant,
                     loaiChiPhi,
                     ngayThanhToan: ngayTT,
                     tenWeb: c(iTenWeb),
                     tenTheAds: c(iTenThe),
-                    // 3 hàm parse độc lập xử lý tách biệt từng loại tiền tệ
+                    dangThe: "",
                     chiPhiUSD: parseUSD(rawAmount),
                     chiPhiVND: parseVND(rawAmount),
                     chiPhiUSDT: parseUSDT(rawAmount),
                     chiPhiRaw: rawAmount,
+                    choHoanTien: choHoanRaw,
+                    refundStatus: "none",
                     billChiPhi: c(iBill),
                     month: parseMonth(ngayTT),
                 });
@@ -717,7 +748,7 @@ export const getDomainSheetData = async (forceRefresh = false): Promise<DomainSh
     }
 };
 
-/** Chỉ lấy bảng chi phí bên phải (cột I–O) tab Chi Phí GMC */
+/** Chỉ lấy bảng chi phí tab Chi Phí GMC (kèm Chờ Hoàn tiền, Dạng thẻ) */
 export const getChiPhiExpenses = async (forceRefresh = false): Promise<ExpenseRecord[]> => {
     if (cachedChiPhiExpenses && !forceRefresh) return cachedChiPhiExpenses;
 
@@ -729,24 +760,35 @@ export const getChiPhiExpenses = async (forceRefresh = false): Promise<ExpenseRe
 
         const expenses: ExpenseRecord[] = [];
         for (const row of rows) {
-            const loaiChiPhi = cleanCell(row["Tên chi phí"]);
-            const registrant = cleanCell(row["Tên Reg"]);
-            const rawAmount = cleanCell(row["Chi phí (USD)"]);
-            const ngayTT = cleanCell(row["Ngày thanh toán"]);
+            const loaiChiPhi = expenseRowVal(row, "Tên chi phí");
+            const registrant = expenseRowVal(row, "Tên Reg");
+            const rawAmount = expenseRowVal(row, "Chi phí (USD)", "Chi phí USD", "Chi phí");
+            const ngayTT = expenseRowVal(row, "Ngày thanh toán");
+            const choHoanTien = expenseRowVal(row, "Chờ Hoàn tiền", "Chờ hoàn tiền", "Cho Hoan tien");
 
-            if (!loaiChiPhi || !registrant || !rawAmount) continue;
+            if (!loaiChiPhi || !registrant) continue;
+            // Cho phép dòng cost = 0 nếu có trạng thái hoàn tiền
+            if (!rawAmount && !choHoanTien) continue;
+
+            const chiPhiUSD = parseUSD(rawAmount);
+            const chiPhiVND = parseVND(rawAmount);
+            const chiPhiUSDT = parseUSDT(rawAmount);
+            const refundStatus = parseRefundStatus(choHoanTien);
 
             expenses.push({
                 tenReg: registrant,
                 loaiChiPhi,
                 ngayThanhToan: ngayTT,
-                tenWeb: cleanCell(row["Tên web"]),
-                tenTheAds: cleanCell(row["Tên thẻ ads"]),
-                chiPhiUSD: parseUSD(rawAmount),
-                chiPhiVND: parseVND(rawAmount),
-                chiPhiUSDT: parseUSDT(rawAmount),
+                tenWeb: expenseRowVal(row, "Tên web"),
+                tenTheAds: expenseRowVal(row, "Tên thẻ ads"),
+                dangThe: expenseRowVal(row, "Dạng thẻ", "Dạng thẻ ", "Dong the"),
+                chiPhiUSD,
+                chiPhiVND,
+                chiPhiUSDT,
                 chiPhiRaw: rawAmount,
-                billChiPhi: cleanCell(row["Bill chi phí"]),
+                choHoanTien,
+                refundStatus,
+                billChiPhi: expenseRowVal(row, "Bill chi phí"),
                 month: parseMonth(ngayTT),
             });
         }

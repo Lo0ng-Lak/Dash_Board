@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { getAllDataWeb, WebRecord, getWebStatusBucket, isWebKpiRecord } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
 import { DevKpiTabs } from "@/components/dev-kpi-tabs";
+import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
 import { aggregateWeekRows, getCurrentMonthKey, parseIsoDate } from "@/lib/kpiWeek";
 import { useTranslation } from "react-i18next";
@@ -100,7 +101,7 @@ function WebKPIPage() {
     const [refreshing, setRefreshing] = useState(false);
 
     // Filters
-    const [selectedMonth, setSelectedMonth] = useState("all");
+    const [selectedMonth, setSelectedMonth] = useState("");
     const [activeKpiMonth, setActiveKpiMonth] = useState(getCurrentMonthKey);
     const [selectedDev, setSelectedDev] = useState("all");
     const [search, setSearch] = useState("");
@@ -134,11 +135,38 @@ function WebKPIPage() {
     const baseStats = useMemo(() => buildStats(records), [records]);
     const allDevs = useMemo(() => [...new Set(baseStats.map(s => s.dev))].sort(), [baseStats]);
 
-    const allMonths = useMemo(() =>
-        [...new Set(baseStats.map(s => s.month))].sort((a, b) => b.localeCompare(a)),
-        [baseStats]);
-
     const kpiRecords = useMemo(() => records.filter(isWebKpiRecord), [records]);
+
+    const devPool = useMemo(
+        () => (selectedDev === "all" ? records : records.filter((r) => r.dev === selectedDev)),
+        [records, selectedDev],
+    );
+
+    const kpiDevPool = useMemo(() => devPool.filter(isWebKpiRecord), [devPool]);
+
+    const latestMonth = useMemo(() => {
+        const months = kpiDevPool.map((r) => r.month).filter(Boolean) as string[];
+        if (!months.length) return getCurrentMonthKey();
+        return months.sort((a, b) => b.localeCompare(a))[0];
+    }, [kpiDevPool]);
+
+    useEffect(() => {
+        setSelectedMonth(latestMonth);
+        setCurrentPage(1);
+    }, [selectedDev, latestMonth]);
+
+    const activeMonth = selectedMonth === "all" ? "all" : (selectedMonth || latestMonth);
+
+    const monthTabItems = useMemo(() => {
+        const map: Record<string, number> = {};
+        kpiDevPool.forEach((r) => {
+            if (!r.month) return;
+            map[r.month] = (map[r.month] || 0) + 1;
+        });
+        return Object.entries(map)
+            .sort((a, b) => b[0].localeCompare(a[0]))
+            .map(([month, count]) => ({ month, count }));
+    }, [kpiDevPool]);
 
     const devTabItems = useMemo(() => {
         const map: Record<string, number> = {};
@@ -151,16 +179,16 @@ function WebKPIPage() {
             .sort((a, b) => b.count - a.count);
     }, [kpiRecords]);
 
-    const kpiMonth = selectedMonth !== "all" ? selectedMonth : activeKpiMonth;
+    const kpiMonth = activeMonth !== "all" ? activeMonth : activeKpiMonth;
 
     // ── 2. ZONE A: Dropdown-only filter ──────────────────────────────────────
     const zoneARecords = useMemo(() => {
         return records.filter(r => {
-            const matchMonth = selectedMonth === "all" || r.month === selectedMonth;
+            const matchMonth = activeMonth === "all" || r.month === activeMonth;
             const matchDev = selectedDev === "all" || r.dev === selectedDev;
             return matchMonth && matchDev;
         });
-    }, [records, selectedMonth, selectedDev]);
+    }, [records, activeMonth, selectedDev]);
 
     const currentStats = useMemo(() => {
         let pending = 0, unknown = 0;
@@ -299,6 +327,23 @@ function WebKPIPage() {
                             {t("dashboardSubTitle", "Track website completion status by dev & month.")}
                         </p>
                     </div>
+                </div>
+
+                <div className="space-y-2">
+                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
+                        {t("kpiMonthFilterWeb")}
+                    </p>
+                    <MonthFilterTabs
+                        items={monthTabItems}
+                        totalWithDate={kpiDevPool.length}
+                        selected={activeMonth}
+                        onSelect={(m) => {
+                            setSelectedMonth(m);
+                            if (m !== "all") setActiveKpiMonth(m);
+                            setCurrentPage(1);
+                        }}
+                        allLabel={t("allMonths", "ALL MONTHS")}
+                    />
                 </div>
 
                 <DevKpiTabs
@@ -482,30 +527,10 @@ function WebKPIPage() {
                         value={search}
                         onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
                     />
-                    <select
-                        className="px-4 py-2 rounded-xl text-[10px] font-black uppercase bg-slate-50 outline-none border-none cursor-pointer text-slate-600 hover:bg-slate-100 transition-colors"
-                        value={selectedMonth}
-                        onChange={e => {
-                            const v = e.target.value;
-                            setSelectedMonth(v);
-                            if (v !== "all") setActiveKpiMonth(v);
-                            setCurrentPage(1);
-                        }}
-                    >
-                        <option value="all">📅 {t("allMonths", "ALL MONTHS")}</option>
-                        {allMonths.map((ym: string) => {
-                            const [y, m] = ym.split("-");
-                            return (
-                                <option key={ym} value={ym}>
-                                    {t("monthLabelFormat", { month: parseInt(m), year: y }).toUpperCase()}
-                                </option>
-                            );
-                        })}
-                    </select>
-                    {(selectedMonth !== "all" || selectedDev !== "all" || search) && (
+                    {(activeMonth !== "all" || selectedDev !== "all" || search) && (
                         <button
                             onClick={() => {
-                                setSelectedMonth("all");
+                                setSelectedMonth(latestMonth);
                                 setSelectedDev("all");
                                 setSearch("");
                                 setActiveKpiMonth(getCurrentMonthKey());
@@ -521,7 +546,7 @@ function WebKPIPage() {
                 <MonthWeeklyKpiBlock
                     monthlyData={monthlyDone}
                     weeklyRows={weeklyRows}
-                    activeMonth={selectedMonth !== "all" ? selectedMonth : activeKpiMonth}
+                    activeMonth={activeMonth !== "all" ? activeMonth : activeKpiMonth}
                     onMonthChange={(m) => { setActiveKpiMonth(m); setSelectedMonth(m); }}
                     groupColumnLabel={t("tableHeaderDev", "Dev")}
                     title={t("monthlyKpiTitle", "KPI theo tháng")}
