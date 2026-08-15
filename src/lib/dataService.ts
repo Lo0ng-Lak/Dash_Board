@@ -407,14 +407,15 @@ export const getGMCRegData = async (forceRefresh = false) => {
             reportDateGMC: gmcRegRowVal(r, "Báo cáo ngày về") || "—",
             webType: gmcRegRowVal(r, "Loại web") || "—",
             status: gmcRegRowVal(r, "Tình Trạng Sus", "Tình trạng Sus") || "Xanh",
-            dev: gmcRegRowVal(r, "DEV", "Người Reg", "Dev"),
+            // KPI TỔNG REG: cột REG = người đăng ký; không lấy DEV
+            dev: gmcRegRowVal(r, "REG", "Người Reg", "Tên Reg"),
             adsDate: gmcRegRowVal(r, "Ngày chạy Ads") || "—",
             linkAdsEgead: gmcRegRowVal(r, "Link ads vs egead", "Báo cáo ngày link ads vs egead") || "—",
             dateSus: gmcRegRowVal(r, "Ngày Sus") || "—",
             reportDateSus: gmcRegRowVal(r, "Báo cáo ngày sus", "Báo cáo ngày Sus") || "—",
             cost: gmcRegRowVal(r, "Chi Phí", "Chi phí") || "0",
-            daysGreen: gmcRegRowVal(r, "Số ngày GMC XANH", "Số ngày GMC xanh") || "—",
-            thayCong: gmcRegRowVal(r, "Thay Cổng", "Thay cổng") || "—",
+            daysGreen: gmcRegRowVal(r, "Số ngày GMC", "Số ngày GMC XANH", "Số ngày GMC xanh") || "—",
+            thayCong: gmcRegRowVal(r, "Thay Cổng paypal", "Thay Cổng", "Thay cổng") || "—",
             note: gmcRegRowVal(r, "Note") || "",
         }));
 

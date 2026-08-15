@@ -23,6 +23,7 @@ import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as DomainsRouteImport } from './routes/domains'
 import { Route as DashInfoRouteImport } from './routes/dash-info'
 import { Route as CustomersRouteImport } from './routes/customers'
+import { Route as AppPlatformRouteImport } from './routes/app-platform'
 import { Route as IndexRouteImport } from './routes/index'
 
 const WordpressRoute = WordpressRouteImport.update({
@@ -95,6 +96,11 @@ const CustomersRoute = CustomersRouteImport.update({
   path: '/customers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppPlatformRoute = AppPlatformRouteImport.update({
+  id: '/app-platform',
+  path: '/app-platform',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -103,6 +109,7 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/app-platform': typeof AppPlatformRoute
   '/customers': typeof CustomersRoute
   '/dash-info': typeof DashInfoRoute
   '/domains': typeof DomainsRoute
@@ -120,6 +127,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/app-platform': typeof AppPlatformRoute
   '/customers': typeof CustomersRoute
   '/dash-info': typeof DashInfoRoute
   '/domains': typeof DomainsRoute
@@ -138,6 +146,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/app-platform': typeof AppPlatformRoute
   '/customers': typeof CustomersRoute
   '/dash-info': typeof DashInfoRoute
   '/domains': typeof DomainsRoute
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/app-platform'
     | '/customers'
     | '/dash-info'
     | '/domains'
@@ -174,6 +184,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/app-platform'
     | '/customers'
     | '/dash-info'
     | '/domains'
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/app-platform'
     | '/customers'
     | '/dash-info'
     | '/domains'
@@ -209,6 +221,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppPlatformRoute: typeof AppPlatformRoute
   CustomersRoute: typeof CustomersRoute
   DashInfoRoute: typeof DashInfoRoute
   DomainsRoute: typeof DomainsRoute
@@ -325,6 +338,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CustomersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app-platform': {
+      id: '/app-platform'
+      path: '/app-platform'
+      fullPath: '/app-platform'
+      preLoaderRoute: typeof AppPlatformRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -337,6 +357,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppPlatformRoute: AppPlatformRoute,
   CustomersRoute: CustomersRoute,
   DashInfoRoute: DashInfoRoute,
   DomainsRoute: DomainsRoute,

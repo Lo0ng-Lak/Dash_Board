@@ -232,6 +232,7 @@ function RootComponent() {
     { to: "/invoices", labelKey: "chiPhi", icon: "💰" },
     { to: "/shopify", labelKey: "shopifyMgmt", icon: "🛒" },
     { to: "/shopify-cost-check", labelKey: "shopifyCostNav", icon: "🔎", nested: true },
+    { to: "/app-platform", labelKey: "appPlatform", icon: "☁️" },
     { to: "/profile", labelKey: "profile", icon: "👤" },
   ];
 

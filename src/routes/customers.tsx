@@ -95,7 +95,7 @@ function GMCPremiumDashboard() {
   // Load GMC REG data from API
   const { data: rawRegData = [], isLoading } = useQuery<GMCRegItem[]>({
     queryKey: ["gmcRegData"],
-    queryFn: () => getGMCRegData(),
+    queryFn: () => getGMCRegData(true),
     refetchInterval: 30000,
   });
 
