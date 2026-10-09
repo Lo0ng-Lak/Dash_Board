@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next"; // 🌐 Import thư viện dịch thuật
 import i18n from "../i18n";
+import { fetchAuthMe, logoutAuth, readAuthToken, clearAuthToken, initialsFromName, type ClientAuthToken } from "@/lib/authSession";
 
 import appCss from "../styles.css?url";
 
@@ -128,6 +129,7 @@ function RootComponent() {
   const location = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionUser, setSessionUser] = useState<ClientAuthToken | null>(null);
 
   // 📱 State điều khiển đóng/mở menu trên Mobile
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -163,24 +165,49 @@ function RootComponent() {
 
   // Check authentication khi component mounts hoặc pathname thay đổi
   useEffect(() => {
-    const checkAuth = () => {
-      // Đảm bảo không lỗi crash trên môi trường Server (SSR)
+    const checkAuth = async () => {
       if (typeof window === "undefined") return;
 
-      const authToken = localStorage.getItem("authToken");
-      const isLoggedIn = !!authToken;
       const isLoginPage = location.pathname === "/login";
+      const cached = readAuthToken();
+      if (cached?.email || cached?.user) {
+        setSessionUser(cached);
+        setIsAuthenticated(true);
+      }
 
-      setIsAuthenticated(isLoggedIn);
+      const remote = await fetchAuthMe();
+      if (remote) {
+        setIsAuthenticated(true);
+        setSessionUser(readAuthToken());
+        setIsLoading(false);
+        return;
+      }
 
-      if (!isLoggedIn && !isLoginPage) {
-        router.navigate({ to: "/login" });
+      let googleReady = false;
+      try {
+        const st = await fetch("/api/auth/status");
+        googleReady = !!(await st.json() as { google?: boolean }).google;
+      } catch {
+        googleReady = false;
+      }
+
+      if (googleReady) {
+        clearAuthToken();
+        setSessionUser(null);
+        setIsAuthenticated(false);
+        if (!isLoginPage) router.navigate({ to: "/login" });
+      } else if (cached) {
+        setSessionUser(cached);
+        setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(false);
+        if (!isLoginPage) router.navigate({ to: "/login" });
       }
 
       setIsLoading(false);
     };
 
-    checkAuth();
+    void checkAuth();
   }, [location.pathname, router]);
 
   // Hàm chuyển đổi ngôn ngữ an toàn và lưu vào bộ nhớ trình duyệt
@@ -223,26 +250,31 @@ function RootComponent() {
 
   // 📋 Chuyển đổi 'label' sang 'labelKey' khớp chính xác với file i18n.ts
   const navItems = [
-    { to: "/customers", labelKey: "regGmc", icon: "👥" },
-    { to: "/dash-info", labelKey: "dashInfo", icon: "📋" },
-    { to: "/domains", labelKey: "domains", icon: "🌐" },
-    { to: "/reg-kpi", labelKey: "regKpi", icon: "📈" },
-    { to: "/web-kpi", labelKey: "webKpi", icon: "📊" },
-    { to: "/web-shield-kpi", labelKey: "webShieldKpi", icon: "🛡️" },
-    { to: "/invoices", labelKey: "chiPhi", icon: "💰" },
-    { to: "/shopify", labelKey: "shopifyMgmt", icon: "🛒" },
-    { to: "/shopify-cost-check", labelKey: "shopifyCostNav", icon: "🔎", nested: true },
-    { to: "/app-platform", labelKey: "appPlatform", icon: "☁️" },
-    { to: "/profile", labelKey: "profile", icon: "👤" },
+    { to: "/customers", labelKey: "regGmc" },
+    { to: "/gmc-salary", labelKey: "gmcSalaryTitle" },
+    { to: "/dash-info", labelKey: "dashInfo" },
+    { to: "/reg-kpi", labelKey: "regKpi" },
+    { to: "/web-kpi", labelKey: "webKpi" },
+    { to: "/web-shield-kpi", labelKey: "webShieldKpi" },
+    { to: "/invoices", labelKey: "chiPhi" },
+    { to: "/shopify", labelKey: "shopifyMgmt" },
+    { to: "/shopify-cost-check", labelKey: "shopifyCostNav", nested: true },
+    { to: "/shopify-bills", labelKey: "shopifyBillsNav", nested: true },
+    { to: "/shopify-orders", labelKey: "shopifyOrdersNav", nested: true },
+    { to: "/app-platform", labelKey: "appPlatform" },
+    { to: "/domain-can-ban", labelKey: "domainCanBan" },
   ];
 
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("authToken");
-    }
+  const handleLogout = async () => {
+    await logoutAuth();
+    setSessionUser(null);
     setIsAuthenticated(false);
     router.navigate({ to: "/login" });
   };
+
+  const displayName = sessionUser?.name || sessionUser?.user || "Admin";
+  const displayEmail = sessionUser?.email || "";
+  const displayInitials = initialsFromName(displayName, displayEmail);
 
   // Render các liên kết menu (Sử dụng hàm t() để tự động dịch nhãn chữ)
   const renderNavLinks = () =>
@@ -251,86 +283,68 @@ function RootComponent() {
         key={item.to}
         to={item.to as any}
         activeOptions={{ exact: (item as { exact?: boolean }).exact ?? false }}
-        className={`flex items-center gap-3 py-2.5 rounded-xl transition-all font-medium text-slate-600 hover:bg-slate-50 data-[status=active]:bg-slate-900 data-[status=active]:text-white data-[status=active]:shadow-lg data-[status=active]:shadow-slate-200 ${
-          (item as { nested?: boolean }).nested
-            ? "ml-4 pl-3 pr-3 text-sm border-l-2 border-slate-200"
-            : "px-3"
-        }`}
+        className={`app-nav-link ${(item as { nested?: boolean }).nested ? "app-nav-link-nested" : ""}`}
       >
-        <span className="text-lg">{item.icon}</span>
         <span>{t(item.labelKey)}</span>
       </Link>
     ));
 
-  // 🌟 KHỐI RENDER NÚT BẤM ĐỔI NGÔN NGỮ (Đồng bộ mượt mà theo trạng thái i18n)
   const renderLanguageToggle = () => (
-    <div className="relative flex items-center bg-slate-100 p-1 rounded-xl w-full h-[36px] select-none border border-slate-200/60">
-      {/* Khối nền chuyển động chạy qua lại */}
+    <div className="app-lang-toggle">
       <div
-        className="absolute top-1 bottom-1 rounded-lg bg-white shadow-sm border border-slate-200/40 transition-all duration-300 ease-out"
-        style={{
-          width: "calc(50% - 4px)",
-          left: currentLang === "vi" ? "4px" : "50%",
-        }}
+        className="app-lang-thumb"
+        style={{ left: currentLang === "vi" ? "4px" : "50%" }}
       />
       <button
         type="button"
-        className={`relative z-10 flex-1 text-center text-[10px] font-black transition-colors duration-200 ${currentLang === "vi" ? "text-slate-900" : "text-slate-400 hover:text-slate-600"
-          }`}
+        className={`app-lang-btn ${currentLang === "vi" ? "is-active" : ""}`}
         onClick={() => changeLanguage("vi")}
       >
-        🇻🇳 TIẾNG VIỆT
+        VI
       </button>
       <button
         type="button"
-        className={`relative z-10 flex-1 text-center text-[10px] font-black transition-colors duration-200 ${currentLang === "en" ? "text-slate-900" : "text-slate-400 hover:text-slate-600"
-          }`}
+        className={`app-lang-btn ${currentLang === "en" ? "is-active" : ""}`}
         onClick={() => changeLanguage("en")}
       >
-        🇬🇧 ENGLISH
+        EN
       </button>
     </div>
   );
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex h-screen w-full bg-background overflow-hidden flex-col md:flex-row">
+      <div className="app-shell flex h-screen w-full overflow-hidden flex-col md:flex-row">
 
-        {/* ── 📱 MOBILE HEADER BAR ── */}
-        <header className="flex md:hidden items-center justify-between px-5 py-4 bg-white border-b shrink-0 z-40">
+        <header className="app-header flex md:hidden items-center justify-between px-5 py-4 border-b shrink-0 z-40">
           <div className="flex flex-col">
-            <span className="text-base font-black text-slate-900 tracking-tight">WebManager</span>
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Management</span>
+            <span className="text-base font-semibold tracking-tight text-foreground">WebManager</span>
+            <span className="text-[9px] text-muted-foreground font-semibold uppercase tracking-[0.16em]">Management</span>
           </div>
-          {/* Nút Hamburger bật menu */}
           <button
             onClick={() => setIsMobileMenuOpen(true)}
-            className="p-2 -mr-2 rounded-xl text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+            className="p-2 -mr-2 rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
             aria-label="Open menu"
           >
-            <span className="text-xl block font-bold">☰</span>
+            <span className="text-xl block font-semibold">☰</span>
           </button>
         </header>
 
-        {/* ── 📱 MOBILE SIDEBAR DRAWER (Hiệu ứng trượt lướt) ── */}
         <div className={`fixed inset-0 z-50 md:hidden transition-all duration-300 ${isMobileMenuOpen ? "visible" : "invisible"}`}>
-          {/* Lớp nền mờ (Backdrop) */}
           <div
             onClick={() => setIsMobileMenuOpen(false)}
-            className={`absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 ${isMobileMenuOpen ? "opacity-100" : "opacity-0"}`}
+            className={`absolute inset-0 bg-rose-950/25 backdrop-blur-sm transition-opacity duration-300 ${isMobileMenuOpen ? "opacity-100" : "opacity-0"}`}
           />
 
-          {/* Khung chứa Menu di động */}
-          <aside className={`absolute top-0 left-0 bottom-0 w-72 bg-white shadow-2xl flex flex-col h-full transform transition-transform duration-300 ease-out ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
-            <div className="px-5 py-5 border-b flex items-center justify-between">
+          <aside className={`app-sidebar absolute top-0 left-0 bottom-0 w-72 flex flex-col h-full transform transition-transform duration-300 ease-out ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
+            <div className="px-5 py-5 border-b border-sidebar-border flex items-center justify-between">
               <div>
-                <div className="text-lg font-black text-slate-900 tracking-tight">WebManager</div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">System Management</div>
+                <div className="text-lg font-semibold tracking-tight text-foreground">WebManager</div>
+                <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-[0.16em]">System Management</div>
               </div>
-              {/* Nút đóng nút X */}
               <button
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 font-bold text-sm"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground text-sm"
               >
                 ✕
               </button>
@@ -340,65 +354,58 @@ function RootComponent() {
               {renderNavLinks()}
             </nav>
 
-            {/* Phần Bottom Mobile gồm Nút Ngôn ngữ và Thông tin User */}
-            <div className="p-4 border-t space-y-4 bg-slate-50/50">
+            <div className="p-4 border-t border-sidebar-border space-y-4 bg-muted/40">
               {renderLanguageToggle()}
 
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-xs font-bold text-white border-2 border-white shadow-sm">
-                  HN
-                </div>
-                <div className="text-sm">
-                  <div className="font-bold text-slate-800">Huy Ngấy</div>
-                  {/* Sử dụng bản dịch cho nhãn logout/role nếu cần */}
-                  <div className="text-[10px] text-slate-400 font-bold uppercase">Administrator</div>
+                {sessionUser?.picture ? (
+                  <img src={sessionUser.picture} alt="" className="w-10 h-10 rounded-full object-cover shadow-[0_0_0_2px_oklch(0.995_0.004_350)]" />
+                ) : (
+                  <div className="app-avatar">{displayInitials}</div>
+                )}
+                <div className="text-sm min-w-0">
+                  <div className="font-semibold text-foreground truncate">{displayName}</div>
+                  <div className="text-[10px] text-muted-foreground font-semibold uppercase truncate">{displayEmail || "Administrator"}</div>
                 </div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="w-full px-3 py-2 text-sm text-slate-600 bg-white hover:bg-slate-50 rounded-lg transition-all font-medium border border-slate-200"
-              >
+              <button onClick={handleLogout} className="app-logout">
                 {t("logout")}
               </button>
             </div>
           </aside>
         </div>
 
-        {/* ── 🖥️ DESKTOP SIDEBAR ── */}
-        <aside className="hidden md:flex w-64 shrink-0 flex-col border-r bg-white h-full">
-          <div className="px-5 py-5 border-b">
-            <div className="text-lg font-black text-slate-900 tracking-tight">WebManager</div>
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">System Management</div>
+        <aside className="app-sidebar hidden md:flex w-64 shrink-0 flex-col border-r h-full">
+          <div className="px-5 py-5 border-b border-sidebar-border">
+            <div className="text-lg font-semibold tracking-tight text-foreground">WebManager</div>
+            <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-[0.16em]">System Management</div>
           </div>
 
           <nav className="flex-1 p-4 space-y-1 text-sm overflow-y-auto custom-scrollbar">
             {renderNavLinks()}
           </nav>
 
-          {/* Phần Bottom Desktop gồm Nút Ngôn ngữ và Thông tin User */}
-          <div className="p-4 border-t space-y-4">
+          <div className="p-4 border-t border-sidebar-border space-y-4">
             {renderLanguageToggle()}
 
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-xs font-bold text-white border-2 border-white shadow-sm">
-                HN
-              </div>
-              <div className="text-sm">
-                <div className="font-bold text-slate-800">Huy Ngấy</div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase">Administrator</div>
+              {sessionUser?.picture ? (
+                <img src={sessionUser.picture} alt="" className="w-10 h-10 rounded-full object-cover shadow-[0_0_0_2px_oklch(0.995_0.004_350)]" />
+              ) : (
+                <div className="app-avatar">{displayInitials}</div>
+              )}
+              <div className="text-sm min-w-0">
+                <div className="font-semibold text-foreground truncate">{displayName}</div>
+                <div className="text-[10px] text-muted-foreground font-semibold uppercase truncate">{displayEmail || "Administrator"}</div>
               </div>
             </div>
-            <button
-              onClick={handleLogout}
-              className="w-full px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-all font-medium border border-slate-200 hover:border-slate-300"
-            >
+            <button onClick={handleLogout} className="app-logout">
               {t("logout")}
             </button>
           </div>
         </aside>
 
-        {/* ── 🌍 MAIN CONTENT ── */}
-        <main className="flex-1 min-w-0 h-full overflow-y-auto scroll-smooth bg-[#FDFCFB]">
+        <main className="flex-1 min-w-0 h-full overflow-y-auto scroll-smooth custom-scrollbar bg-transparent">
           <Outlet />
         </main>
 

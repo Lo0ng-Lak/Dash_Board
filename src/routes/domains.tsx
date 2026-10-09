@@ -109,7 +109,7 @@ function Dashboard() {
   if (isLoading) return <div className="p-10 text-center font-medium text-slate-400 animate-pulse">{t("loadingDomainData")}</div>;
 
   return (
-    <div className="min-h-screen bg-[#FDFCFB] p-6 text-slate-800 font-sans">
+    <div className="min-h-full p-6 text-foreground font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
 
         <div className="flex flex-col md:flex-row justify-between items-end gap-4">

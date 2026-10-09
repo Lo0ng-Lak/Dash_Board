@@ -5,8 +5,10 @@ import {
   CardTxnRecord,
   ExpenseRecord,
   getChiPhiExpenses,
+  isAirwallexHeaders,
   isCardTxnCsv,
   isCardTxnHeaders,
+  isGoogleAdsMerchant,
   parseCardTxnCsvText,
   parseCardTxnRows,
   parseExcelRows,
@@ -37,6 +39,7 @@ const parseSearchAmount = (q: string): number | null => {
 const merchantGroupName = (merchant: string): string => {
   const raw = (merchant || "").trim();
   if (!raw) return "UNKNOWN";
+  if (isGoogleAdsMerchant(raw)) return "GOOGLE ADS";
   const star = raw.indexOf("*");
   if (star >= 0) {
     const before = raw.slice(0, star).trim();
@@ -52,8 +55,11 @@ const matchCardTxn = (e: CardTxnRecord, q: string) => {
   // Số tiền → khớp cột số tiền
   const amt = parseSearchAmount(nq);
   if (amt != null && round2(e.netAmount) === amt) return true;
-  // Tên → chỉ lọc cột Merchant (không lọc nickname thẻ / card no)
-  return (e.merchantName || "").toLowerCase().includes(nq);
+  if (merchantGroupName(e.merchantName).toLowerCase() === nq) return true;
+  return [e.merchantName, e.cardName, e.cardNickname, e.cardNo]
+    .join(" ")
+    .toLowerCase()
+    .includes(nq);
 };
 
 interface MerchantGroupStat {
@@ -94,6 +100,7 @@ export function ShopifyCostReconcile() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState("");
   const [mode, setMode] = useState<Mode | null>(null);
+  const [cardFormat, setCardFormat] = useState<"photon" | "airwallex" | null>(null);
   const [cardTxns, setCardTxns] = useState<CardTxnRecord[] | null>(null);
   const [expenses, setExpenses] = useState<ExpenseRecord[] | null>(null);
   const [parseError, setParseError] = useState("");
@@ -199,6 +206,7 @@ export function ShopifyCostReconcile() {
 
   const clear = () => {
     setMode(null);
+    setCardFormat(null);
     setCardTxns(null);
     setExpenses(null);
     setFileName("");
@@ -236,6 +244,7 @@ export function ShopifyCostReconcile() {
             return;
           }
           setMode("card");
+          setCardFormat(isAirwallexHeaders(headers) ? "airwallex" : "photon");
           setCardTxns(parsed);
         } else {
           const parsed = parseExpenseRows(rows);
@@ -259,6 +268,9 @@ export function ShopifyCostReconcile() {
           return;
         }
         setMode("card");
+        setCardFormat(isCardTxnCsv(text) && /airwallex|financial account id|beneficiary name/i.test(text)
+          ? "airwallex"
+          : "photon");
         setCardTxns(rows);
         setFileName(file.name);
         await refetch();
@@ -304,7 +316,9 @@ export function ShopifyCostReconcile() {
           {fileName && (
             <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-2 rounded-xl">
               {fileName}
-              {mode === "card" ? ` · ${t("shopifyCostFormatCard")}` : null}
+              {mode === "card"
+                ? ` · ${cardFormat === "airwallex" ? t("shopifyCostFormatAirwallex") : t("shopifyCostFormatCard")}`
+                : null}
             </span>
           )}
           {(cardTxns || expenses) && (
@@ -505,7 +519,8 @@ export function ShopifyCostReconcile() {
                         <tr className="bg-slate-50 text-[9px] font-black uppercase tracking-widest text-slate-400">
                           <th className="p-3">{t("thPaymentDate")}</th>
                           <th className="p-3">{t("shopifyCostTxnId")}</th>
-                          <th className="p-3">{t("shopifyCostCard")}</th>
+                          <th className="p-3">{t("shopifyCostCardName")}</th>
+                          <th className="p-3">{t("shopifyCostCardNo")}</th>
                           <th className="p-3">{t("shopifyCostMerchant")}</th>
                           <th className="p-3">{t("status")}</th>
                           <th className="p-3 text-right">{t("thAmount")}</th>
@@ -520,11 +535,11 @@ export function ShopifyCostReconcile() {
                             <td className="p-3 text-[10px] font-mono text-slate-600 max-w-[180px] truncate">
                               {e.transactionId}
                             </td>
-                            <td className="p-3">
-                              <p className="text-[11px] font-black text-indigo-600 uppercase">
-                                {e.cardNickname || "-"}
-                              </p>
-                              <p className="text-[10px] font-mono text-slate-400">{e.cardNo || "-"}</p>
+                            <td className="p-3 text-[11px] font-black text-indigo-600 uppercase max-w-[180px] truncate">
+                              {e.cardName || e.cardNickname || "-"}
+                            </td>
+                            <td className="p-3 text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                              {e.cardLast4 ? `****${e.cardLast4}` : e.cardNo || "-"}
                             </td>
                             <td className="p-3 text-[11px] font-bold text-slate-700 max-w-[260px] truncate">
                               {e.merchantName || "-"}
@@ -538,7 +553,7 @@ export function ShopifyCostReconcile() {
                         ))}
                         {pageCards.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="text-center p-10 text-sm text-slate-400">
+                            <td colSpan={7} className="text-center p-10 text-sm text-slate-400">
                               {t("noMatchingRecords")}
                             </td>
                           </tr>

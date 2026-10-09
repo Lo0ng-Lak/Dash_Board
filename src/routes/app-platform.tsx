@@ -110,7 +110,7 @@ function AppPlatformPage() {
     );
 
     return (
-        <div className="min-h-screen bg-[#F4F7F9] p-6 md:p-8 text-slate-900">
+        <div className="min-h-full p-6 md:p-8 text-foreground">
             <div className="max-w-7xl mx-auto space-y-6">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div className="space-y-1">

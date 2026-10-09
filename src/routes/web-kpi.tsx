@@ -200,7 +200,7 @@ function WebKPIPage() {
             if (r.dev) devs.add(r.dev);
         });
         const kpiTotal = zoneARecords.filter((r) => isWebKpiRecord(r)).length;
-        const checkCount = zoneARecords.filter((r) => getStatusBucket(r.status) === "check" && isWebKpiRecord(r)).length;
+        const checkCount = zoneARecords.filter((r) => getStatusBucket(r.status) === "check").length;
         return { total: zoneARecords.length, done: kpiTotal, pending, check: checkCount, unknown, kpiTotal, devCount: devs.size };
     }, [zoneARecords]);
 
@@ -308,7 +308,7 @@ function WebKPIPage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#F4F7F9] p-8 text-slate-900">
+        <div className="min-h-full p-8 text-foreground">
             <div className="max-w-7xl mx-auto space-y-8">
 
                 {/* ── Header ── */}

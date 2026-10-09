@@ -55,6 +55,17 @@ export function getCurrentMonthKey(): string {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+export function shiftMonthKey(ym: string, delta: number): string {
+    const { year, month } = parseMonthKey(ym);
+    const d = new Date(year, month - 1 + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Tháng hiện tại và (count-1) tháng trước, tăng dần: [T-2, T-1, T] */
+export function getRecentMonthKeys(count = 3, from = getCurrentMonthKey()): string[] {
+    return Array.from({ length: count }, (_, i) => shiftMonthKey(from, i - (count - 1)));
+}
+
 export function parseIsoDate(s: string | null | undefined): Date | null {
     if (!s?.trim()) return null;
     const d = new Date(s.trim());

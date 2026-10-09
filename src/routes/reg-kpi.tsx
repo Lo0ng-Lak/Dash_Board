@@ -157,7 +157,7 @@ function RegKpiPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-8 text-slate-900">
+    <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto space-y-8">
 
         <div className="space-y-1">

@@ -2,8 +2,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getGMCRegData, isValidGmcWebDomain } from "../lib/dataService";
+import { getGMCRegData, isValidGmcWebDomain, parseGmcSusKind } from "../lib/dataService";
+import {
+  formatNamecheapExpires,
+  normalizeDomainKey,
+  parseNamecheapExpires,
+  resolveNamecheapDomain,
+  type NamecheapDomainInfo,
+} from "@/lib/namecheapDomains";
 import { DevKpiTabs } from "@/components/dev-kpi-tabs";
+import { GmcKpi3MonthTable } from "@/components/gmc-kpi-3month-table";
 import { GmcKpiSummaryTable } from "@/components/gmc-kpi-summary-table";
 import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { Pagination } from "../components/pagination";
@@ -73,6 +81,62 @@ function LinkAdsEgeadCell({ value }: { value: string }) {
   );
 }
 
+const ncDaysLeft = (expires: string): number | null => {
+  const target = parseNamecheapExpires(expires);
+  if (!target) return null;
+  target.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+const domainNeedsRenewal = (info: NamecheapDomainInfo | undefined): boolean => {
+  if (!info) return false;
+  if (info.isExpired) return true;
+  const left = ncDaysLeft(info.expires);
+  return left !== null && left <= 30;
+};
+
+const domainRenewalDays = (info: NamecheapDomainInfo | undefined): number => {
+  if (!info) return Number.POSITIVE_INFINITY;
+  if (info.isExpired) return -1;
+  const left = ncDaysLeft(info.expires);
+  return left === null ? Number.POSITIVE_INFINITY : left;
+};
+
+function DomainExpiryCell({
+  info,
+  t,
+}: {
+  info: NamecheapDomainInfo | undefined;
+  t: (key: string) => string;
+}) {
+  if (!info) {
+    return <span className="text-[10px] font-bold text-slate-300">{t("gmcDomainNotInNc")}</span>;
+  }
+  if (info.isExpired) {
+    return <span className="text-[10px] font-black uppercase text-red-600">{t("gmcDomainExpired")}</span>;
+  }
+  const left = ncDaysLeft(info.expires);
+  const urgent = left !== null && left <= 30;
+  const warn = left !== null && left <= 60;
+  return (
+    <div className="flex flex-col">
+      <span className={`text-xs font-black ${urgent ? "text-red-600" : warn ? "text-amber-600" : "text-slate-700"}`}>
+        {formatNamecheapExpires(info.expires)}
+      </span>
+      {left !== null && (
+        <span className={`text-[9px] font-bold ${urgent ? "text-red-500" : warn ? "text-amber-500" : "text-slate-400"}`}>
+          {left} {t("daysLeft")}
+        </span>
+      )}
+      {info.autoRenew && (
+        <span className="text-[8px] font-black uppercase text-emerald-600 mt-0.5">Auto</span>
+      )}
+    </div>
+  );
+}
+
 export const Route = createFileRoute("/customers")({
   component: GMCPremiumDashboard,
 });
@@ -88,6 +152,7 @@ function GMCPremiumDashboard() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [webTypeFilter, setWebTypeFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState<string>("");
+  const [expiryFilter, setExpiryFilter] = useState<"all" | "lte30">("all");
 
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
@@ -98,6 +163,24 @@ function GMCPremiumDashboard() {
     queryFn: () => getGMCRegData(true),
     refetchInterval: 30000,
   });
+
+  const { data: namecheapMap = {}, error: namecheapError } = useQuery<Record<string, NamecheapDomainInfo>>({
+    queryKey: ["namecheapDomains"],
+    queryFn: async () => {
+      const res = await fetch("/api/namecheap/domains");
+      const json = (await res.json()) as {
+        map?: Record<string, NamecheapDomainInfo>;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      return json.map ?? {};
+    },
+    staleTime: 60 * 60 * 1000,
+    retry: 1,
+  });
+
+  const lookupNc = (domain: string) =>
+    resolveNamecheapDomain(normalizeDomainKey(domain), namecheapMap);
 
   const regData = useMemo(
     () => rawRegData.filter((item) => isValidGmcWebDomain(item.domain)),
@@ -141,22 +224,27 @@ function GMCPremiumDashboard() {
   const daysBetween = (start: Date, end: Date): number =>
     Math.max(0, Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 
-  /** Số ngày xanh: có Ngày Sus → từ Ngày về GMC đến Ngày Sus; không thì đến hôm nay */
+  /** Số ngày xanh: có Ngày Sus → đến Ngày Sus; Đã kháng lại mail / còn sống → đến hôm nay */
   const calculateGreenDays = (item: GMCRegItem): number | null => {
     const gmcDate = parseDmyDateLocal(item.dateGMC);
     if (!gmcDate) return null;
 
+    const kind = parseGmcSusKind(item.status);
     const susDate = parseDmyDateLocal(item.dateSus);
-    if (susDate) {
+    if (susDate && kind !== "appealed_mail" && kind !== "live") {
       return daysBetween(gmcDate, susDate);
     }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysToToday = daysBetween(gmcDate, today);
+
+    if (kind === "appealed_mail" || kind === "live") return daysToToday;
 
     const fromSheet = item.daysGreen && item.daysGreen !== "—" ? Number(item.daysGreen) : NaN;
     if (!isNaN(fromSheet) && fromSheet >= 0) return fromSheet;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return daysBetween(gmcDate, today);
+    return daysToToday;
   };
 
   const devTabItems = useMemo(() => {
@@ -187,9 +275,18 @@ function GMCPremiumDashboard() {
   }, [devPool]);
 
   useEffect(() => {
-    setMonthFilter(latestMonth);
+    setMonthFilter(expiryFilter === "lte30" ? "all" : latestMonth);
     setCurrentPage(1);
-  }, [devFilter, latestMonth]);
+  }, [devFilter, latestMonth, expiryFilter]);
+
+  const dueSoonCount = useMemo(() => {
+    const seen = new Set<string>();
+    devPool.forEach((item) => {
+      if (!domainNeedsRenewal(lookupNc(item.domain))) return;
+      seen.add(item.domain.toLowerCase().trim());
+    });
+    return seen.size;
+  }, [devPool, namecheapMap]);
 
   const activeMonth = monthFilter === "all" ? "all" : (monthFilter || latestMonth);
 
@@ -234,6 +331,7 @@ function GMCPremiumDashboard() {
       dateGMC: item.dateGMC,
       greenDays: calculateGreenDays(item),
       suspended: isSuspended(item.status),
+      status: item.status,
     })),
     [regData],
   );
@@ -255,19 +353,24 @@ function GMCPremiumDashboard() {
 
       const itemMonth = parseGmcMonth(item.dateGMC);
       const matchesMonth = activeMonth === "all" ? true : itemMonth === activeMonth;
+      const matchesExpiry = expiryFilter === "all" ? true : domainNeedsRenewal(lookupNc(item.domain));
 
-      return matchesDev && matchesStatus && matchesWebType && matchesMonth;
+      return matchesDev && matchesStatus && matchesWebType && matchesMonth && matchesExpiry;
     });
-  }, [orderedFullData, devFilter, statusFilter, webTypeFilter, activeMonth]);
+  }, [orderedFullData, devFilter, statusFilter, webTypeFilter, activeMonth, expiryFilter, namecheapMap]);
 
   // ==========================================
   // ZONE 2: SEARCH INPUT FILTER
   // ==========================================
   const finalFilteredTableData = useMemo(() => {
-    return dropdownFilteredData.filter((item: GMCRegItem) => {
+    const searched = dropdownFilteredData.filter((item: GMCRegItem) => {
       return item.domain.toLowerCase().includes(searchDomain.toLowerCase());
     });
-  }, [dropdownFilteredData, searchDomain]);
+    if (expiryFilter !== "lte30") return searched;
+    return [...searched].sort(
+      (a, b) => domainRenewalDays(lookupNc(a.domain)) - domainRenewalDays(lookupNc(b.domain)),
+    );
+  }, [dropdownFilteredData, searchDomain, expiryFilter, namecheapMap]);
 
   // Map domain frequency across entire system to label RE-REG
   const globalDomainFrequencyMap = useMemo(() => {
@@ -299,7 +402,7 @@ function GMCPremiumDashboard() {
   const formatOptions = { minimumFractionDigits: 0, maximumFractionDigits: 2 };
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-8 text-slate-900">
+    <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto space-y-8">
 
         <div className="space-y-1">
@@ -307,12 +410,23 @@ function GMCPremiumDashboard() {
           <p className="text-slate-500 font-medium text-sm">{t("gmcSystemDesc")}</p>
         </div>
 
+        {namecheapError && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+            Namecheap: {(namecheapError as Error).message}
+          </div>
+        )}
+
         <DevKpiTabs
           items={devTabItems}
           totalCount={regData.length}
           selected={devFilter}
           onSelect={(dev) => { setDevFilter(dev); setCurrentPage(1); }}
           allLabel={t("allOwners")}
+        />
+
+        <GmcKpi3MonthTable
+          rows={kpiTableRows}
+          parseMonth={parseGmcMonth}
         />
 
         <div className="space-y-2">
@@ -326,6 +440,34 @@ function GMCPremiumDashboard() {
             onSelect={(m) => { setMonthFilter(m); setCurrentPage(1); }}
             allLabel={t("allMonths")}
           />
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
+            {t("gmcExpiryFilterTitle")}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => { setExpiryFilter("all"); setCurrentPage(1); }}
+              className={`px-4 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${expiryFilter === "all"
+                ? "bg-slate-900 text-white shadow-md"
+                : "bg-white text-slate-500 border border-slate-200"
+                }`}
+            >
+              {t("gmcExpiryAll")}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setExpiryFilter("lte30"); setCurrentPage(1); }}
+              className={`px-4 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all border ${expiryFilter === "lte30"
+                ? "bg-red-600 text-white border-red-600 shadow-md"
+                : "bg-white text-red-600 border-red-200 hover:border-red-300"
+                }`}
+            >
+              {t("gmcExpiryDueSoon")} ({dueSoonCount})
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-4">
@@ -405,11 +547,12 @@ function GMCPremiumDashboard() {
         {/* GMC Table */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
           <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-            <table className="w-full text-left table-fixed min-w-[1680px]">
+            <table className="w-full text-left table-fixed min-w-[1780px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  <th className="p-4 w-[16%]">{t("webAndPlatform")}</th>
-                  <th className="p-4 w-[7%]">{t("assignedStaff")}</th>
+                  <th className="p-4 w-[15%]">{t("webAndPlatform")}</th>
+                  <th className="p-4 w-[7%]">{t("gmcDomainExpiry")}</th>
+                  <th className="p-4 w-[6%]">{t("assignedStaff")}</th>
                   <th className="p-4 w-[6%]">{t("status")}</th>
                   <th className="p-4 w-[7%]">{t("gmcReturnDate")}</th>
                   <th className="p-4 w-[9%]">{t("gmcReturnReport")}</th>
@@ -445,6 +588,10 @@ function GMCPremiumDashboard() {
                           )}
                         </div>
                         <div className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">{item.webType || "Unknown"}</div>
+                      </td>
+
+                      <td className="p-4">
+                        <DomainExpiryCell info={lookupNc(item.domain)} t={t} />
                       </td>
 
                       <td className="p-4">
@@ -508,7 +655,7 @@ function GMCPremiumDashboard() {
                 })}
                 {paginatedTableData.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="text-center p-10 text-sm font-medium text-slate-400">
+                    <td colSpan={11} className="text-center p-10 text-sm font-medium text-slate-400">
                       {t("noAccountData")}
                     </td>
                   </tr>

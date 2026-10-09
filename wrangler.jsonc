@@ -4,4 +4,16 @@
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
+  "vars": {
+    "NAMECHEAP_CLIENT_IP": "64.225.56.106",
+    "NAMECHEAP_API_USER": "tuanah252",
+    "NAMECHEAP_USERNAME": "tuanah252",
+    "NAMECHEAP_PROXY_URL": "http://64.225.56.106.nip.io:8880"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "DOMAIN_SALE_MARKS",
+      "id": "a1f4f4ddd3ce4a63889989053b82eb91"
+    }
+  ]
 }

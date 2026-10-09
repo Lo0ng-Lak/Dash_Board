@@ -1,6 +1,7 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
 import { motion, useMotionValue, useTransform } from "framer-motion";
+import { logoutAuth, readAuthToken, type ClientAuthToken } from "@/lib/authSession";
 
 export const Route = createFileRoute("/profile")({
     component: Profile,
@@ -85,7 +86,7 @@ function StatBar({ label, value, color = "cyan", delay = 0 }: { label: string; v
 // ─── MAIN PROFILE COMPONENT ───────────────────────────────────────────────────
 function Profile() {
     const navigate = useNavigate();
-    const [auth, setAuth] = useState<{ user?: string } | null>(null);
+    const [auth, setAuth] = useState<ClientAuthToken | null>(null);
     const [now, setNow] = useState(new Date());
     const profileRef = useRef<HTMLDivElement>(null);
 
@@ -96,8 +97,7 @@ function Profile() {
 
     useEffect(() => {
         try {
-            const raw = localStorage.getItem("authToken");
-            setAuth(raw ? JSON.parse(raw) : null);
+            setAuth(readAuthToken());
         } catch { setAuth(null); }
     }, []);
 
@@ -125,18 +125,18 @@ function Profile() {
         };
     }, []);
 
-    const handleLogout = () => {
-        localStorage.removeItem("authToken");
+    const handleLogout = async () => {
+        await logoutAuth();
         navigate({ to: "/login" });
     };
 
-    const username = auth?.user ?? "ROOT_USER";
+    const username = auth?.name || auth?.user || "ROOT_USER";
+    const accountEmail = auth?.email || "";
     const timeStr = "SYSTEM_ONLINE";
     const dateStr = `NODE_OP_CLK: ${now.toLocaleTimeString("en-US", { hour12: false }).replace(/:/g, "").slice(0, 6)}`;
 
     return (
-        <div
-            className="min-h-screen bg-[#020710] text-slate-100 flex items-center justify-center p-4 md:p-6 relative overflow-hidden select-none"
+        <div className="min-h-screen bg-[#020710] text-slate-100 flex flex-col items-center justify-center p-4 md:p-6 relative overflow-hidden select-none gap-6"
             style={{ fontFamily: "'Share Tech Mono', monospace" }}
         >
             <style>{`
@@ -209,7 +209,7 @@ function Profile() {
                                 {/* Khung chứa ảnh chiếm trọn 100% diện tích khối lục giác */}
                                 <div className="w-[120%] h-[120%] clip-hex bg-[#06152b] border border-cyan-400/50 flex items-center justify-center p-0.5 relative shadow-[0_0_30px_rgba(0,245,255,0.2)] group-hover:shadow-[0_0_45px_rgba(0,245,255,0.45)] transition-all duration-300">
                                     <img
-                                        src="/admin.png"
+                                        src={auth?.picture || "/admin.png"}
                                         alt="Admin Avatar"
 
                                         className="w-full h-full object-cover origin-center scale-145 clip-hex transition-transform duration-500 group-hover:scale-135"
@@ -235,17 +235,17 @@ function Profile() {
                             <div className="p-4 bg-black/40 border border-white/[0.08] rounded-lg">
                                 <div className="text-[11px] font-bold text-white/40 uppercase tracking-[0.15em] mb-1">ACCOUNT_ID</div>
                                 <div className="text-xs font-black font-mono text-cyan-400 tracking-wider break-all">
-                                    EG-059
+                                    {accountEmail || "EG-059"}
                                 </div>
                             </div>
 
                             {/* Lưới 2x2 cho thông tin cá nhân thực tế */}
                             <div className="grid grid-cols-2 gap-4">
                                 {/* Bạn có thể truyền dữ liệu động từ state/auth vào phần value nếu có */}
-                                <InfoCard title="FULL_NAME" value="Nguyễn Quang Huy" color="cyan" />
-                                <InfoCard title="ROLE_POSITION" value="Web Developer" color="pink" />
-                                <InfoCard title="EMAIL_ADDRESS" value="nguyenquanghuy12a99@gmail.com" color="cyan" />
-                                <InfoCard title="BIRTH_DATE" value="26/10/2004" color="pink" />
+                                <InfoCard title="FULL_NAME" value={username} color="cyan" />
+                                <InfoCard title="ROLE_POSITION" value="Dashboard access" color="pink" />
+                                <InfoCard title="EMAIL_ADDRESS" value={accountEmail || "—"} color="cyan" />
+                                <InfoCard title="LOGIN" value="Gmail Google" color="pink" />
                             </div>
 
                             {/* Giao diện mô tả tiểu sử hoặc trạng thái làm việc */}
@@ -275,6 +275,13 @@ function Profile() {
                         {/* Hai nút chức năng dồn về góc dưới phải */}
                         <div className="md:col-span-4 flex flex-col sm:flex-row md:flex-col gap-2.5 justify-end">
                             {/* Nút Kết nối Social */}
+                            <button
+                                type="button"
+                                onClick={() => void handleLogout()}
+                                className="w-full py-2.5 bg-black/40 border border-rose-400/30 text-rose-300 font-bold text-xs uppercase tracking-[0.15em] transition-all duration-200 rounded text-center font-mono"
+                            >
+                                LOGOUT //
+                            </button>
                             <a href="https://www.facebook.com/huydtr0004" target="_blank" rel="noopener noreferrer" className="w-full">
                                 <motion.button
                                     whileHover={{ scale: 1.01, boxShadow: "0 0 15px rgba(34,211,238,0.2)", borderColor: "rgba(34,211,238,0.8)" }}
@@ -297,6 +304,108 @@ function Profile() {
 
                 </div>
             </motion.div>
+
+            <AllowedEmailsPanel />
+        </div>
+    );
+}
+
+function AllowedEmailsPanel() {
+    const [emails, setEmails] = useState<string[]>([]);
+    const [pinned, setPinned] = useState<string[]>([]);
+    const [admin, setAdmin] = useState(false);
+    const [draft, setDraft] = useState("");
+    const [error, setError] = useState("");
+    const [busy, setBusy] = useState(false);
+
+    const load = async () => {
+        const res = await fetch("/api/auth/users", { credentials: "include" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { emails?: string[]; pinned?: string[]; admin?: boolean };
+        setEmails(json.emails ?? []);
+        setPinned(json.pinned ?? []);
+        setAdmin(!!json.admin);
+    };
+
+    useEffect(() => {
+        void load();
+    }, []);
+
+    const mutate = async (email: string, action: "add" | "remove") => {
+        setBusy(true);
+        setError("");
+        try {
+            const res = await fetch("/api/auth/users", {
+                method: "PUT",
+                credentials: "include",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ email, action }),
+            });
+            const json = (await res.json()) as { emails?: string[]; pinned?: string[]; error?: string };
+            if (!res.ok) {
+                setError(json.error || "Không cập nhật được.");
+                return;
+            }
+            setEmails(json.emails ?? []);
+            setPinned(json.pinned ?? []);
+            setDraft("");
+        } catch {
+            setError("Không cập nhật được.");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="w-full max-w-[1040px] relative z-10 rounded-2xl border border-cyan-500/20 bg-[#040d1a]/90 p-5 md:p-6">
+            <h2 className="text-sm font-black uppercase tracking-widest text-cyan-300 mb-1">Gmail được phép đăng nhập</h2>
+            <p className="text-[11px] text-white/40 mb-4">
+                {admin
+                    ? "Bạn là admin — thêm hoặc gỡ Gmail được vào dashboard."
+                    : "Chỉ admin mới thêm/gỡ tài khoản. Danh sách hiện tại:"}
+            </p>
+            <div className="flex flex-wrap gap-2 mb-4">
+                {emails.map((email) => (
+                    <span key={email} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-cyan-100">
+                        {email}
+                        {admin && !pinned.includes(email) && (
+                            <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void mutate(email, "remove")}
+                                className="text-rose-400 hover:text-rose-300"
+                            >
+                                ×
+                            </button>
+                        )}
+                    </span>
+                ))}
+                {emails.length === 0 && <span className="text-xs text-white/30">Chưa có danh sách.</span>}
+            </div>
+            {admin && (
+                <form
+                    className="flex flex-col sm:flex-row gap-2"
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        if (draft.trim()) void mutate(draft.trim(), "add");
+                    }}
+                >
+                    <input
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        placeholder="email@gmail.com"
+                        className="flex-1 h-10 rounded-lg bg-black/40 border border-white/10 px-3 text-sm text-white placeholder:text-white/30 outline-none focus:border-cyan-400/50"
+                    />
+                    <button
+                        type="submit"
+                        disabled={busy || !draft.trim()}
+                        className="h-10 px-4 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-cyan-200 text-xs font-bold uppercase tracking-widest disabled:opacity-50"
+                    >
+                        Thêm Gmail
+                    </button>
+                </form>
+            )}
+            {error && <p className="text-xs text-rose-400 mt-2">{error}</p>}
         </div>
     );
 }

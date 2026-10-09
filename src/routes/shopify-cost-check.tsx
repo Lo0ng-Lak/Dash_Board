@@ -6,7 +6,7 @@ function ShopifyCostCheckPage() {
   const { t } = useTranslation();
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-8 text-slate-900">
+    <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="space-y-1">
           <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">

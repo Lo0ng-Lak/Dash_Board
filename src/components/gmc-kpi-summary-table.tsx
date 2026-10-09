@@ -7,6 +7,7 @@ export interface GmcKpiRow {
   dateGMC: string;
   greenDays: number | null;
   suspended: boolean;
+  status?: string;
 }
 
 interface GmcKpiSummaryTableProps {

@@ -37,13 +37,23 @@ export interface WebRecord {
     rawCompletedDate: string;     // giá trị gốc cột "Ngày hoàn thành"
     month: string | null;         // "YYYY-MM" | null
     status: string;
+    webType?: string;
 }
 
 export type WebStatusBucket = "done" | "pending" | "check" | "unknown";
 
 export function getWebStatusBucket(status: string): WebStatusBucket {
     const s = (status ?? "").toLowerCase().trim();
-    if (s.includes("đã hoàn thành") || s.includes("da hoan thanh") || s.includes("completed") || s === "done" || s === "true") {
+    if (
+        s.includes("đã hoàn thành") ||
+        s.includes("da hoan thanh") ||
+        s.includes("đã set up") ||
+        s.includes("da set up") ||
+        s.includes("đã setup") ||
+        s.includes("completed") ||
+        s === "done" ||
+        s === "true"
+    ) {
         return "done";
     }
     if (s.includes("cần check") || s.includes("can check") || s.includes("need check")) return "check";
@@ -59,12 +69,17 @@ export function hasWebCompletionDate(
     return Boolean(r.rawCompletedDate?.trim() && r.completedDate?.trim());
 }
 
-/** KPI Web GMC: chỉ tính khi có ngày hoàn thành — không tính "Chưa hoàn thành" */
+/**
+ * KPI hoàn thành: có ngày hoàn thành + không phải "Chưa hoàn thành".
+ * "Cần check web" + ngày = KPI (bên reg tự đổi status sau).
+ */
 export function isWebKpiRecord(
     r: Pick<WebRecord, "status" | "completedDate" | "rawCompletedDate" | "month" | "dev">,
 ): boolean {
     if (!hasWebCompletionDate(r) || !r.month || !r.dev?.trim()) return false;
-    return getWebStatusBucket(r.status) !== "pending";
+    const b = getWebStatusBucket(r.status);
+    if (b === "pending") return false;
+    return b === "done" || b === "check" || b === "unknown";
 }
 
 /** @deprecated dùng isWebKpiRecord */
@@ -73,19 +88,20 @@ export function isWebKpiCountable(status: string): boolean {
     return b === "done" || b === "check";
 }
 
+/** 8/8, 10/8, 26/8, 8-8, 3/9/26 → ngày/tháng, thiếu năm thì lấy năm hiện tại */
 const parseWebCompletedDate = (raw: string): string | null => {
-    const trimmed = raw.trim();
+    const trimmed = (raw ?? "").trim();
     if (!trimmed) return null;
-    const dmy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (dmy) {
-        const y = Number(dmy[3]);
-        const m = Number(dmy[2]);
-        const d = Number(dmy[1]);
-        if (m < 1 || m > 12 || d < 1 || d > 31) return null;
-        return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
-    }
     if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-    return null;
+
+    const dmy = trimmed.match(/^(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?$/);
+    if (!dmy) return null;
+    const d = Number(dmy[1]);
+    const m = Number(dmy[2]);
+    let y = dmy[3] ? Number(dmy[3]) : new Date().getFullYear();
+    if (y < 100) y += 2000;
+    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 };
 
 export interface WebShieldRecord {
@@ -127,11 +143,7 @@ const cleanWebShieldDomain = (raw: string): string => {
     return (match ? match[1] : stripped.split(/\s+/)[0]).toLowerCase();
 };
 
-const parseWebShieldDate = (raw: string): string | null => {
-    const dmy = (raw ?? "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (!dmy) return null;
-    return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
-};
+const parseWebShieldDate = (raw: string): string | null => parseWebCompletedDate(raw);
 
 const normalizeWebShieldDev = (raw: string): string => {
     const d = raw.trim();
@@ -155,6 +167,53 @@ const normalizeWebShieldDev = (raw: string): string => {
     return d;
 };
 
+const WEB_SHIELD_HEADER_HINTS = [
+    "web shield",
+    "ngày hoàn thành",
+    "tinh trang",
+    "tình trạng",
+    "trạng thái web",
+    "check infor",
+    "ngày làm",
+];
+
+const webShieldHeaderScore = (cells: unknown[]): number => {
+    const h = cells.map((c) => String(c ?? "").toLowerCase().replace(/\s+/g, " ").trim()).join(" | ");
+    let score = WEB_SHIELD_HEADER_HINTS.filter((k) => h.includes(k)).length;
+    if (h.includes("dev") && (h.includes("web") || h.includes("done"))) score += 2;
+    if (h.includes("ngày") || h.includes("ngay")) score += 1;
+    return score;
+};
+
+const rowsFromWebShieldCsv = (text: string): Record<string, string>[] => {
+    const matrix = Papa.parse<string[]>(text, { header: false, skipEmptyLines: true }).data;
+    if (!matrix.length) return [];
+    let bestIdx = 0;
+    let bestScore = -1;
+    const scan = Math.min(matrix.length, 60);
+    for (let i = 0; i < scan; i++) {
+        const score = webShieldHeaderScore(matrix[i] ?? []);
+        if (score > bestScore) {
+            bestScore = score;
+            bestIdx = i;
+        }
+    }
+    const headers = (matrix[bestIdx] ?? []).map((c, i) => {
+        const s = String(c ?? "").trim();
+        return s || `col_${i}`;
+    });
+    const out: Record<string, string>[] = [];
+    for (let i = bestIdx + 1; i < matrix.length; i++) {
+        const row: Record<string, string> = {};
+        const cells = matrix[i] ?? [];
+        headers.forEach((h, j) => {
+            row[h] = String(cells[j] ?? "");
+        });
+        out.push(row);
+    }
+    return out;
+};
+
 const parseWebShieldRows = (
     rows: Record<string, string>[],
     sheetId: string,
@@ -164,14 +223,21 @@ const parseWebShieldRows = (
     const records: WebShieldRecord[] = [];
 
     for (const row of rows) {
-        const rawWeb = webShieldRowVal(row, "Web Shield", "Web");
+        const rawWeb = webShieldRowVal(row, "Web Shield", "web shield", "Web");
         if (!rawWeb) continue;
 
         const web = cleanWebShieldDomain(rawWeb);
         if (!web) continue;
 
-        const tinhTrang = webShieldRowVal(row, "tình trạng", "tinh trang");
-        const ngay = webShieldRowVal(row, "Ngày", "ngày");
+        const tinhTrang = webShieldRowVal(row, "tình trạng", "tinh trang", "Tình Trạng", "Done");
+        const ngay = webShieldRowVal(
+            row,
+            "Ngày Hoàn Thành",
+            "Ngay Hoan Thanh",
+            "Ngày hoàn thành",
+            "Ngày",
+            "ngày",
+        );
         const completedDate = parseWebShieldDate(ngay) ?? parseWebShieldDate(tinhTrang);
         const dev = normalizeWebShieldDev(webShieldRowVal(row, "Dev", "dev"));
 
@@ -182,12 +248,12 @@ const parseWebShieldRows = (
             web,
             rawWeb,
             checkInfor: webShieldRowVal(row, "Check Infor"),
-            email: webShieldRowVal(row, "Email"),
-            address: webShieldRowVal(row, "Địa CHỉ", "Địa CHỈ", "Dia CHI"),
+            email: webShieldRowVal(row, "Email", "Tên LLC"),
+            address: webShieldRowVal(row, "Địa CHỉ", "Địa CHỈ", "Địa Chỉ", "Dia CHI"),
             cong: webShieldRowVal(row, "Cổng", "Công"),
             tinhTrang,
             dev,
-            webStatus: webShieldRowVal(row, "Trạng thái web", "Trang thai web"),
+            webStatus: webShieldRowVal(row, "Trạng thái web", "Trang thai web", "Done"),
             ngay,
             completedDate,
             month: completedDate ? completedDate.slice(0, 7) : null,
@@ -209,7 +275,7 @@ export const getWebShieldData = async (forceRefresh = false): Promise<WebShieldR
                 const baseUrl = `https://docs.google.com/spreadsheets/d/e/${INFO_WEB_SHEET_ID}/pub?output=csv&gid=${sheet.gid}`;
                 const separator = baseUrl.includes("?") ? "&" : "?";
                 const csv = await fetch(`${baseUrl}${separator}t=${timestamp}`, { cache: "no-store" }).then((r) => r.text());
-                const rows = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true }).data;
+                const rows = rowsFromWebShieldCsv(csv);
                 return parseWebShieldRows(rows, sheet.id, sheet.name);
             }),
         );
@@ -248,21 +314,38 @@ export const getAllDataWeb = async (forceRefresh = false): Promise<WebRecord[]> 
 
             const dev = (row["Tên Dev"] ?? "").trim();
             const status = (row["Đã hoàn thành"] ?? "").trim();
+            const webType = (row["Loại web"] ?? "").trim();
             const rawDate = (row["Ngày hoàn thành"] ?? "").trim();
 
             const completedDate = parseWebCompletedDate(rawDate);
             const month = completedDate ? completedDate.slice(0, 7) : null;
 
-            records.push({ domain, dev, completedDate, rawCompletedDate: rawDate, month, status });
+            records.push({ domain, dev, completedDate, rawCompletedDate: rawDate, month, status, webType });
         }
 
-        // Mỗi domain 1 dòng — lấy bản ghi cuối; không có ngày HT → không tính KPI
-        const byDomain = new Map<string, WebRecord>();
+        // KPI: 1 domain + 1 tháng hoàn thành = 1 dòng (giữ Cần check có ngày).
+        // Dòng sau không được xóa KPI tháng trước. Chưa HT không ghi đè dòng đã có ngày.
+        const byDomainMonth = new Map<string, WebRecord>();
+        const latestByDomain = new Map<string, WebRecord>();
         for (const r of records) {
-            byDomain.set(r.domain, r);
+            latestByDomain.set(r.domain, r);
+            if (!r.completedDate || !r.month) continue;
+            const key = `${r.domain}|${r.month}`;
+            const prev = byDomainMonth.get(key);
+            if (!prev) {
+                byDomainMonth.set(key, r);
+            } else if (isWebKpiRecord(r) || !isWebKpiRecord(prev)) {
+                byDomainMonth.set(key, r);
+            }
         }
 
-        cachedAllData = [...byDomain.values()];
+        const out = [...byDomainMonth.values()];
+        const datedDomains = new Set(out.map((r) => r.domain));
+        for (const r of latestByDomain.values()) {
+            if (!r.completedDate && !datedDomains.has(r.domain)) out.push(r);
+        }
+
+        cachedAllData = out;
         return cachedAllData;
 
     } catch (error) {
@@ -341,6 +424,32 @@ export const getLatestWebData = async (forceRefresh = false) => {
     }
 };
 
+export type TongHopWebReg = { domain: string; tenReg: string };
+
+let cachedTongHopWeb: TongHopWebReg[] | null = null;
+
+/** New Infor Web — tab Tổng hợp web (Tên Reg + Tên Domain) */
+export const getTongHopWebRegs = async (forceRefresh = false): Promise<TongHopWebReg[]> => {
+    if (cachedTongHopWeb && !forceRefresh) return cachedTongHopWeb;
+    try {
+        const ts = Date.now();
+        const sep = LINK_REBUILD.includes("?") ? "&" : "?";
+        const text = await fetch(`${LINK_REBUILD}${sep}t=${ts}`, { cache: "no-store" }).then((r) => r.text());
+        const rows = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true }).data;
+        const map = new Map<string, TongHopWebReg>();
+        for (const row of rows) {
+            const domain = String(row["Tên Domain"] ?? "").trim();
+            const tenReg = String(row["Tên Reg"] ?? "").trim();
+            if (!domain) continue;
+            map.set(domain.toLowerCase(), { domain, tenReg: tenReg || "—" });
+        }
+        cachedTongHopWeb = [...map.values()];
+        return cachedTongHopWeb;
+    } catch (error) {
+        console.error("getTongHopWebRegs error:", error);
+        return [];
+    }
+};
 
 const gmcRegRowVal = (row: Record<string, unknown>, ...keys: string[]) => {
     for (const key of keys) {
@@ -427,6 +536,29 @@ export const getGMCRegData = async (forceRefresh = false) => {
         console.error("GMC REG (KPI TỔNG REG) fetch error:", error);
         return [];
     }
+};
+
+/** Tình trạng Sus trên KPI TỔNG REG — mail statuses phải check trước generic "sus". */
+export type GmcSusKind = "live" | "sus" | "sus_mail" | "appealing_mail" | "appealed_mail";
+
+const foldViStatus = (s: string) =>
+    s.toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/\s+/g, " ")
+        .trim();
+
+export const parseGmcSusKind = (status: string): GmcSusKind => {
+    const raw = (status ?? "").trim();
+    if (!raw || raw === "—") return "live";
+    const s = foldViStatus(raw);
+    if (!s || s === "xanh" || s.includes("chua sus")) return "live";
+    if (s.includes("da khang lai mail") || s.includes("khang lai mail")) return "appealed_mail";
+    if (s.includes("dang khang mail")) return "appealing_mail";
+    if (s.includes("sus mail")) return "sus_mail";
+    if (s.includes("sus") || s === "die" || s.includes("ve sus")) return "sus";
+    return "live";
 };
 
 
@@ -924,6 +1056,7 @@ export interface CardTxnRecord {
     cardNo: string;
     cardLast4: string;
     cardNickname: string;
+    cardName: string;
     transactionType: string;
     status: string;
     currency: string;
@@ -963,20 +1096,121 @@ const extractCardLast4 = (cardNo: string) => {
     return star ? star[1] : "";
 };
 
-/** Nhận diện header giao dịch thẻ (CSV hoặc Excel) */
-export const isCardTxnHeaders = (headers: string[]): boolean => {
-    const h = headers.map((x) => String(x ?? "").toLowerCase()).join(" | ");
+const rowValIncludes = (row: Record<string, string>, ...needles: string[]) => {
+    const exact = cardRowVal(row, ...needles);
+    if (exact) return exact;
+    const n = needles.map((s) => s.toLowerCase());
+    for (const [k, v] of Object.entries(row)) {
+        if (!v?.trim()) continue;
+        const lk = k.toLowerCase().replace(/\s+/g, " ");
+        if (n.some((needle) => lk.includes(needle))) return cleanCell(v);
+    }
+    return "";
+};
+
+/** Airwallex Payment Method: "Card: ANDREW MORGAN STEWART, **364" / "Card: bojjico.co, **9715, uuid" */
+const parsePaymentInstrument = (raw: string): { cardName: string; cardNo: string; last4: string } => {
+    const s = (raw || "").replace(/\s+/g, " ").trim();
+    if (!s) return { cardName: "", cardNo: "", last4: "" };
+
+    const afterCard = s.replace(/^card:\s*/i, "");
+    const parts = afterCard.split(",").map((p) => p.trim()).filter(Boolean);
+    const cardName = (parts[0] || "").trim();
+    const maskPart = parts.find((p) => /\*+\s*\d+/.test(p)) || "";
+    const maskMatch = maskPart.match(/\*+\s*(\d{2,6})/) ?? s.match(/\*{2,}\s*(\d{2,6})/);
+    const last4 = maskMatch?.[1] ?? extractCardLast4(s);
+
+    return {
+        cardName,
+        cardNo: last4 ? `**${last4}` : "",
+        last4,
+    };
+};
+
+const headerBlob = (headers: string[]) =>
+    headers.map((x) => String(x ?? "").toLowerCase().replace(/\s+/g, " ").trim()).join(" | ");
+
+/** Airwallex Transaction Reconciliation Report */
+export const isAirwallexHeaders = (headers: string[]): boolean => {
+    const h = headerBlob(headers);
     return (
-        h.includes("transaction id") ||
-        (h.includes("merchant name") && h.includes("billing amount")) ||
-        (h.includes("card nickname") && h.includes("transaction amount"))
+        h.includes("financial account id") ||
+        h.includes("estimated settlement") ||
+        (h.includes("beneficiary name") && h.includes("settlement currency")) ||
+        (h.includes("net amount") && h.includes("payment instrument"))
     );
 };
 
-/** Nhận diện CSV giao dịch thẻ (có Transaction ID / Merchant Name) */
+/** Nhận diện header giao dịch thẻ (CSV hoặc Excel) — PhotonPay + Airwallex */
+export const isCardTxnHeaders = (headers: string[]): boolean => {
+    const h = headerBlob(headers);
+    return (
+        h.includes("transaction id") ||
+        (h.includes("merchant name") && h.includes("billing amount")) ||
+        (h.includes("card nickname") && h.includes("transaction amount")) ||
+        isAirwallexHeaders(headers)
+    );
+};
+
+const HEADER_HINTS = [
+    "transaction id",
+    "merchant name",
+    "billing amount",
+    "card nickname",
+    "financial account id",
+    "settlement currency",
+    "beneficiary name",
+    "estimated settlement",
+    "net amount",
+    "payment instrument",
+    "payment method",
+    "transaction amount",
+    "created at",
+    "tên chi phí",
+    "ngày thanh toán",
+    "tên reg",
+];
+
+const rowHeaderScore = (cells: unknown[]): number => {
+    const h = headerBlob(cells.map((c) => String(c ?? "")));
+    return HEADER_HINTS.filter((k) => h.includes(k)).length;
+};
+
+/** Tìm hàng header thật (Airwallex để title/meta ở vài dòng đầu) rồi map thành object */
+export const rowsFromMatrix = (matrix: unknown[][]): Record<string, string>[] => {
+    if (!matrix.length) return [];
+    let bestIdx = 0;
+    let bestScore = -1;
+    const scan = Math.min(matrix.length, 25);
+    for (let i = 0; i < scan; i++) {
+        const score = rowHeaderScore(matrix[i] ?? []);
+        if (score > bestScore) {
+            bestScore = score;
+            bestIdx = i;
+        }
+    }
+    const headers = (matrix[bestIdx] ?? []).map((c) => cellToString(c).trim());
+    const out: Record<string, string>[] = [];
+    for (let r = bestIdx + 1; r < matrix.length; r++) {
+        const line = matrix[r] ?? [];
+        const obj: Record<string, string> = {};
+        let any = false;
+        headers.forEach((h, i) => {
+            if (!h) return;
+            const val = cellToString(line[i]).trim();
+            if (obj[h]) return;
+            obj[h] = val;
+            if (val) any = true;
+        });
+        if (any) out.push(obj);
+    }
+    return out;
+};
+
+/** Nhận diện CSV giao dịch thẻ (có Transaction ID / Merchant Name / Airwallex) */
 export const isCardTxnCsv = (text: string): boolean => {
-    const firstLine = text.split(/\r?\n/).find((l) => l.trim()) || "";
-    return isCardTxnHeaders(firstLine.split(/[,;\t]/));
+    const lines = text.split(/\r?\n/).slice(0, 20);
+    return lines.some((l) => l.trim() && isCardTxnHeaders(l.split(/[,;\t]/)));
 };
 
 const formatDisplayDate = (d: Date): string => {
@@ -1019,17 +1253,12 @@ export const parseExcelRows = async (file: File | ArrayBuffer): Promise<Record<s
     const sheetName = wb.SheetNames[0];
     if (!sheetName) return [];
     const sheet = wb.Sheets[sheetName];
-    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+        header: 1,
         defval: "",
         raw: false,
     });
-    return json.map((row) => {
-        const out: Record<string, string> = {};
-        for (const [k, v] of Object.entries(row)) {
-            out[String(k).trim()] = cellToString(v).trim();
-        }
-        return out;
-    });
+    return rowsFromMatrix(matrix);
 };
 
 export const parseCardTxnRows = (rows: Record<string, string>[]): CardTxnRecord[] => {
@@ -1057,13 +1286,41 @@ export const mapCardTxnRow = (row: Record<string, string>): CardTxnRecord | null
         "Billing Amount",
         "Transaction Amount",
         "Billing Amount (at settlement)",
+        "Net Amount",
     );
-    if (!transactionId && !amountRaw) return null;
+    const netRaw = cardRowVal(row, "Net Amount");
+    const feeRaw = cardRowVal(row, "Fee");
+    if (!transactionId && !amountRaw && !netRaw && !feeRaw) return null;
 
-    const amountAbs = Math.abs(parseMoneyCell(amountRaw));
+    const amountAbs = Math.abs(parseMoneyCell(amountRaw || netRaw || feeRaw));
     const reversalAmount = Math.abs(parseMoneyCell(cardRowVal(row, "Reversal Amount")));
-    const netAmount = Math.max(0, roundMoney(amountAbs - reversalAmount));
-    const cardNo = cardRowVal(row, "Card No.", "Card No", "Card Number");
+    const netFromCol = parseMoneyCell(netRaw);
+    const netAmount = netRaw
+        ? Math.max(0, roundMoney(Math.abs(netFromCol)))
+        : Math.max(0, roundMoney(amountAbs - reversalAmount));
+    const instrumentRaw =
+        rowValIncludes(row, "Payment Method") ||
+        rowValIncludes(
+            row,
+            "Payment Instrument",
+            "Card Name",
+            "Cardholder",
+            "Card Holder",
+            "Tên thẻ",
+            "Ten the",
+        );
+    const parsedInst = parsePaymentInstrument(instrumentRaw);
+    const cardNo =
+        cardRowVal(row, "Card No.", "Card No", "Card Number") ||
+        parsedInst.cardNo;
+    const cardNickname =
+        cardRowVal(row, "Card Nickname", "Nickname", "Card Name") ||
+        parsedInst.cardName ||
+        instrumentRaw;
+    const merchantName =
+        cardRowVal(row, "Merchant Name", "Merchant", "Beneficiary Name") ||
+        cardRowVal(row, "Note to Self", "Note", "Reference") ||
+        cardNickname;
     let transactionDate = cardRowVal(
         row,
         "Transaction Time",
@@ -1074,6 +1331,7 @@ export const mapCardTxnRow = (row: Record<string, string>): CardTxnRecord | null
         "Create Time",
         "Posted Date",
         "Settlement Date",
+        "Settled At",
         "Date",
         "Ngày giao dịch",
         "Thời gian",
@@ -1092,21 +1350,31 @@ export const mapCardTxnRow = (row: Record<string, string>): CardTxnRecord | null
         }
     }
 
+    const typeRaw = cardRowVal(row, "Transaction Type", "Type");
+    const typeLower = typeRaw.toLowerCase();
+    const transactionType =
+        typeLower === "card" || typeLower === "fee" || typeLower.includes("payment")
+            ? "Expense"
+            : typeRaw;
+
     return {
-        cardId: cardRowVal(row, "Card ID", "Card Id"),
+        cardId: cardRowVal(row, "Card ID", "Card Id", "Financial Account ID"),
         product: cardRowVal(row, "Product"),
         productName: cardRowVal(row, "Product Name"),
         transactionId: transactionId || `${cardNo}-${amountAbs}`,
         cardNo,
-        cardLast4: extractCardLast4(cardNo),
-        cardNickname: cardRowVal(row, "Card Nickname", "Nickname"),
-        transactionType: cardRowVal(row, "Transaction Type", "Type"),
+        cardLast4: parsedInst.last4 || extractCardLast4(cardNo),
+        cardNickname,
+        cardName: parsedInst.cardName || cardNickname,
+        transactionType,
         status: cardRowVal(row, "Status"),
-        currency: (cardRowVal(row, "Billing Currency", "Transaction Currency") || "USD").toUpperCase(),
+        currency: (
+            cardRowVal(row, "Billing Currency", "Settlement Currency", "Transaction Currency") || "USD"
+        ).toUpperCase(),
         amount: amountAbs,
         reversalAmount,
         netAmount,
-        merchantName: cardRowVal(row, "Merchant Name", "Merchant"),
+        merchantName,
         mcc: cardRowVal(row, "MCC"),
         transactionDate,
     };
@@ -1115,12 +1383,37 @@ export const mapCardTxnRow = (row: Record<string, string>): CardTxnRecord | null
 const isCountableCardTxn = (t: CardTxnRecord) => {
     const type = t.transactionType.toLowerCase();
     const status = t.status.toLowerCase();
-    if (type && !type.includes("expense") && !type.includes("chi")) return false;
+    if (
+        type.includes("deposit") ||
+        type.includes("top up") ||
+        type.includes("topup") ||
+        type.includes("nạp") ||
+        type.includes("payout") ||
+        type.includes("transfer in")
+    ) {
+        return false;
+    }
+    if (
+        type &&
+        !type.includes("expense") &&
+        !type.includes("chi") &&
+        !type.includes("card") &&
+        !type.includes("fee") &&
+        !type.includes("payment")
+    ) {
+        return false;
+    }
     if (status.includes("fail") || status.includes("decline") || status.includes("cancel") || status.includes("void")) {
         return false;
     }
-    // Successful / Processing / empty
-    if (status && !status.includes("success") && !status.includes("process") && status !== "") {
+    if (
+        status &&
+        !status.includes("success") &&
+        !status.includes("process") &&
+        !status.includes("settled") &&
+        !status.includes("pending") &&
+        status !== ""
+    ) {
         return false;
     }
     if (t.netAmount <= 0) return false;
@@ -1128,11 +1421,8 @@ const isCountableCardTxn = (t: CardTxnRecord) => {
 };
 
 export const parseCardTxnCsvText = (text: string): CardTxnRecord[] => {
-    const rows = Papa.parse<Record<string, string>>(text, {
-        header: true,
-        skipEmptyLines: true,
-    }).data;
-    return parseCardTxnRows(rows);
+    const matrix = Papa.parse<string[]>(text, { header: false, skipEmptyLines: true }).data;
+    return parseCardTxnRows(rowsFromMatrix(matrix));
 };
 
 const gmcUsdAmount = (e: ExpenseRecord) => roundMoney((e.chiPhiUSD || 0) + (e.chiPhiUSDT || 0));
@@ -1145,6 +1435,23 @@ const gmcHasLast4 = (e: ExpenseRecord, last4: string) => {
     if (!last4) return false;
     const blob = `${e.tenTheAds} ${e.dangThe} ${e.chiPhiRaw} ${e.tenWeb} ${e.billChiPhi}`;
     return blob.replace(/\D/g, "").includes(last4) || blob.includes(last4);
+};
+
+/** Google Ads trên thẻ / Airwallex: "Google AD", "GOOGLE *", "GOOGLE *ADS" */
+export const isGoogleAdsMerchant = (merchant: string): boolean => {
+    const m = (merchant || "").toLowerCase().replace(/\s+/g, " ").trim();
+    if (!m) return false;
+    if (m.includes("adwords")) return true;
+    if (!m.includes("google")) return false;
+    if (m.includes("ads") || /\bgoogle\s*ad\b/.test(m)) return true;
+    if (/^google\s*\*?\s*$/.test(m)) return true;
+    if (
+        /google\s*\*/.test(m) &&
+        !/cloud|workspace|gsuite|youtube|storage|play|one|domains/.test(m)
+    ) {
+        return true;
+    }
+    return false;
 };
 
 /** Nhóm merchant thẻ → từ khóa khớp sheet Chi phí GMC */
@@ -1171,8 +1478,9 @@ const merchantFamily = (merchant: string): MerchantFamily => {
     }
     if (m.includes("cursor")) return "cursor";
     if (m.includes("capcut") || m.includes("cap cut")) return "capcut";
-    if (m.includes("google") && (m.includes("ads") || m.includes("adwords"))) return "ads";
+    if (isGoogleAdsMerchant(merchant)) return "ads";
     if (m.includes("facebook") || m.includes("meta ads") || m.includes("tiktok")) return "ads";
+    if (m.includes("etsy") || m.includes("ebay")) return "other";
     if (m.includes("mail") || m.includes("outlook") || m.includes("gmail")) return "mail";
     return "other";
 };
@@ -1674,12 +1982,15 @@ export interface InfoBoRecord {
     docCaNhan: string;
     docDoanhNghiep: string;
     trangThai: string;
+    khangDot2: string;
     note: string;
     hasEin: boolean;
-    khangStatus: "khang_ve" | "fail" | "chua_khang" | "none";
+    khangStatus: "khang_ve" | "fail" | "chua_khang" | "reg_lai" | "none";
+    isKhangDot2: boolean;
     isKhangVe: boolean;
     isKhangFail: boolean;
     isChuaKhang: boolean;
+    isRegLaiInfo: boolean;
     isInUse: boolean;
     isChuaXinInfo: boolean;
     isEinEligible: boolean;
@@ -1698,6 +2009,7 @@ export interface InfoBoStats {
     khangVe: number;
     khangFail: number;
     chuaKhang: number;
+    regLaiInfo: number;
     khangVeRate: number;
     khangFailRate: number;
     infoInUse: number;
@@ -1716,6 +2028,7 @@ export interface InfoBoOwnerStats {
     khangVe: number;
     khangFail: number;
     chuaKhang: number;
+    regLaiInfo: number;
 }
 
 export interface InfoBoBatch {
@@ -1770,27 +2083,43 @@ const countsInStats = (loaiDoc: string) =>
 
 const hasEinDoc = (doc: string) => doc.trim().length > 0;
 
-export type KhangStatus = "khang_ve" | "fail" | "chua_khang" | "none";
+export type KhangStatus = "khang_ve" | "fail" | "chua_khang" | "reg_lai" | "none";
 
 export const parseKhangStatus = (status: string): KhangStatus => {
     const s = status.toLowerCase().trim();
     if (!s) return "none";
+    if (s.includes("reg lại") || s.includes("reg lai")) return "reg_lai";
     if (s.includes("chưa kháng") || s.includes("chua khang")) return "chua_khang";
     if (s === "fail" || s.includes("fail")) return "fail";
     if (s.includes("kháng về") || s.includes("khang ve")) return "khang_ve";
     return "none";
 };
 
-const isBatchSeparator = (tenReg: string) => {
-    const t = tenReg.toUpperCase();
-    return t.includes("INFO") && (t.includes("ĐỢT") || t.includes("DOT"));
+/** Đợt 2 có giá trị thì lấy đợt 2. Kháng đợt 2 về = kháng thành công. */
+export const resolveKhangStatus = (
+    trangThai: string,
+    khangDot2: string,
+): { status: KhangStatus; fromDot2: boolean } => {
+    const s2 = parseKhangStatus(khangDot2);
+    if (s2 !== "none") return { status: s2, fromDot2: true };
+    return { status: parseKhangStatus(trangThai), fromDot2: false };
+};
+
+const isBatchSeparator = (tenReg: string, web = "") => {
+    const t = tenReg.toUpperCase().normalize("NFC").trim();
+    if (!t.startsWith("INFO")) return false;
+    if (t.includes("ĐỢT") || t.includes("DOT") || t.includes("LLC")) return true;
+    if (/\bT\d/.test(t)) return true;
+    if (/tổng\s*\d+/i.test(web)) return true;
+    return false;
 };
 
 const parseBatchMeta = (tenReg: string, web: string) => {
     const totalMatch = web.match(/(\d+)/);
     const totalDeclared = totalMatch ? parseInt(totalMatch[1], 10) : 0;
     const dateMatch = tenReg.match(/ĐỢT\s*(.+)/i) ?? tenReg.match(/DOT\s*(.+)/i);
-    const label = (dateMatch?.[1] ?? tenReg).trim();
+    const infoTail = tenReg.replace(/^INFO\s+/i, "").trim();
+    const label = (dateMatch?.[1] ?? (infoTail || tenReg)).trim();
     const id = label.replace(/\//g, "-").replace(/\s+/g, "_").toLowerCase() || "batch";
     return { name: tenReg, label, totalDeclared, id };
 };
@@ -1811,6 +2140,7 @@ export const computeInfoBoStats = (
     const khangVe = records.filter((r) => r.khangStatus === "khang_ve").length;
     const khangFail = records.filter((r) => r.khangStatus === "fail").length;
     const chuaKhang = records.filter((r) => r.khangStatus === "chua_khang").length;
+    const regLaiInfo = records.filter((r) => r.khangStatus === "reg_lai").length;
     const khangResolved = khangVe + khangFail;
     const infoInUse = countable.filter((r) => r.isInUse).length;
     const chuaGanWeb = countable.filter((r) => !r.web).length;
@@ -1836,6 +2166,7 @@ export const computeInfoBoStats = (
         khangVe,
         khangFail,
         chuaKhang,
+        regLaiInfo,
         khangVeRate: khangResolved > 0 ? Math.round((khangVe / khangResolved) * 1000) / 10 : 0,
         khangFailRate: khangResolved > 0 ? Math.round((khangFail / khangResolved) * 1000) / 10 : 0,
         infoInUse,
@@ -1865,6 +2196,7 @@ export const computeByOwner = (
                 khangVe: 0,
                 khangFail: 0,
                 chuaKhang: 0,
+                regLaiInfo: 0,
             });
         }
         const o = map.get(name)!;
@@ -1872,6 +2204,7 @@ export const computeByOwner = (
         if (r.isKhangVe) o.khangVe++;
         else if (r.isKhangFail) o.khangFail++;
         else if (r.isChuaKhang) o.chuaKhang++;
+        else if (r.isRegLaiInfo) o.regLaiInfo++;
     }
 
     return Array.from(map.values()).sort((a, b) => b.totalInfo - a.totalInfo);
@@ -1910,7 +2243,7 @@ export const getInfoBoData = async (forceRefresh = false): Promise<InfoBoSheetDa
             const web = getRowVal(row, "Web");
             const infoCaNhan = getRowVal(row, "Info cá nhân");
 
-            if (isBatchSeparator(tenReg)) {
+            if (isBatchSeparator(tenReg, web)) {
                 const meta = parseBatchMeta(tenReg, web);
                 currentBatchId = meta.id || `batch-${++batchIndex}`;
                 batchMeta.set(currentBatchId, { ...meta, id: currentBatchId });
@@ -1934,13 +2267,26 @@ export const getInfoBoData = async (forceRefresh = false): Promise<InfoBoSheetDa
             const loaiDoc = getRowVal(row, "Loại Doc");
             const docDoanhNghiep = getRowVal(row, "Doc doanh nghiệp");
             const trangThai = getRowVal(row, "Trạng thái");
+            const khangDot2 =
+                getRowVal(row, "Kháng đợt 2", "Khang dot 2", "Kháng đợt2") ||
+                (() => {
+                    for (const [k, v] of Object.entries(row)) {
+                        const lk = k.toLowerCase().replace(/\s+/g, " ");
+                        if (lk.includes("kháng đợt") || lk.includes("khang dot") || lk.includes("đợt 2")) {
+                            const s = String(v ?? "").trim();
+                            if (s) return cleanCell(s);
+                        }
+                    }
+                    return "";
+                })();
             const sttRaw = getRowVal(row, "");
             const stt = parseInt(sttRaw, 10) || (batchRecords.get(currentBatchId)?.length ?? 0) + 1;
 
             const einEligible = isDoanhNghiep(loaiDoc);
             const caNhan = isCaNhan(loaiDoc);
             const inStats = countsInStats(loaiDoc);
-            const khangStatus = parseKhangStatus(trangThai);
+            const resolved = resolveKhangStatus(trangThai, khangDot2);
+            const khangStatus = resolved.status;
 
             const record: InfoBoRecord = {
                 stt,
@@ -1954,15 +2300,18 @@ export const getInfoBoData = async (forceRefresh = false): Promise<InfoBoSheetDa
                 docCaNhan: getRowVal(row, "Doc cá nhân"),
                 docDoanhNghiep,
                 trangThai,
+                khangDot2,
                 note: getRowVal(row, "Note"),
                 isEinEligible: einEligible,
                 isCaNhan: caNhan,
                 countsInStats: inStats,
                 hasEin: einEligible && hasEinDoc(docDoanhNghiep),
                 khangStatus,
+                isKhangDot2: resolved.fromDot2,
                 isKhangVe: khangStatus === "khang_ve",
                 isKhangFail: khangStatus === "fail",
                 isChuaKhang: khangStatus === "chua_khang",
+                isRegLaiInfo: khangStatus === "reg_lai",
                 isChuaXinInfo: isChuaXinDoc(loaiDoc),
                 isInUse: inStats && Boolean(web),
             };

@@ -12,6 +12,7 @@ const TAB_COLORS = [
 export interface DevTabItem {
     name: string;
     count: number;
+    label?: string;
 }
 
 interface DevKpiTabsProps {
@@ -28,7 +29,7 @@ export function DevKpiTabs({ items, totalCount, selected, onSelect, allLabel }: 
             <button
                 type="button"
                 onClick={() => onSelect("all")}
-                className={`px-4 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${selected === "all"
+                className={`px-4 py-2.5 text-xs font-black uppercase tracking-widest rounded-full transition-all ${selected === "all"
                     ? "bg-slate-900 text-white shadow-md"
                     : "bg-white text-slate-500 border border-slate-200"
                     }`}
@@ -43,12 +44,12 @@ export function DevKpiTabs({ items, totalCount, selected, onSelect, allLabel }: 
                         key={item.name}
                         type="button"
                         onClick={() => onSelect(item.name)}
-                        className={`px-4 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all border ${active ? "text-white shadow-md" : "bg-white"}`}
+                        className={`px-4 py-2.5 text-xs font-black uppercase tracking-widest rounded-full transition-all border ${active ? "text-white shadow-md" : "bg-white"}`}
                         style={active
                             ? { background: color, borderColor: color }
                             : { color, borderColor: color, background: `${color}15` }}
                     >
-                        {item.name} ({item.count})
+                        {item.label || item.name} ({item.count})
                     </button>
                 );
             })}

@@ -14,9 +14,16 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 //   },
 // });
 export default defineConfig({
-  build: {
-    commonjsOptions: {
-      include: [/react-i18next/, /i18next/, /node_modules/], // Giúp bundler hiểu đúng module CommonJS khi build
+  tanstackStart: {
+    router: {
+      generatedRouteTree: "routeTree.live.ts",
+    },
+  },
+  vite: {
+    build: {
+      commonjsOptions: {
+        include: [/react-i18next/, /i18next/, /node_modules/],
+      },
     },
   },
 });

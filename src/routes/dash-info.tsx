@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
-import { clearInfoBoCache, getInfoBoData, InfoBoBatch, InfoBoOwnerStats, InfoBoRecord, InfoBoStats } from "@/lib/dataService";
+import { clearInfoBoCache, getInfoBoData, InfoBoBatch, InfoBoOwnerStats, InfoBoRecord, InfoBoStats, parseKhangStatus } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
 
 export const Route = createFileRoute("/dash-info")({
@@ -11,6 +11,12 @@ export const Route = createFileRoute("/dash-info")({
 });
 
 const ITEMS_PER_PAGE = 12;
+
+const batchDisplayLabel = (batch: { name: string; label: string }) => {
+  if (/llc/i.test(batch.name) || /chưa check/i.test(batch.name)) return batch.label;
+  if (/đợt|dot/i.test(batch.name)) return `Đợt ${batch.label}`;
+  return batch.label;
+};
 
 const OWNER_COLORS: Record<string, string> = {
   "Long BMT": "bg-purple-100 text-purple-800 border-purple-200",
@@ -57,8 +63,11 @@ function DashInfoPage() {
 
   useEffect(() => {
     if (batchInitialized || !batches.length) return;
-    const primary = batches.find((b) => b.stats.totalInSheet > 0) ?? batches[0];
-    if (primary) setBatchFilter(primary.id);
+    const withRows = batches.filter((b) => b.stats.totalInSheet > 0);
+    const newest = [...withRows].reverse().find((b) => /llc|chưa check/i.test(b.name) || /llc|chưa check/i.test(b.label))
+      ?? withRows[withRows.length - 1]
+      ?? batches[0];
+    if (newest) setBatchFilter(newest.id);
     setBatchInitialized(true);
   }, [batches, batchInitialized]);
 
@@ -87,7 +96,7 @@ function DashInfoPage() {
     return records.filter((r) => {
       const q = search.toLowerCase().trim();
       const matchesSearch = !q || [
-        r.web, r.infoCaNhan, r.tenReg, r.dev, r.loaiDoc, r.trangThai,
+        r.web, r.infoCaNhan, r.tenReg, r.dev, r.loaiDoc, r.trangThai, r.khangDot2,
       ].some((v) => v.toLowerCase().includes(q));
 
       const matchesLoai = loaiFilter === "all"
@@ -101,7 +110,7 @@ function DashInfoPage() {
 
   if (isLoading || !stats) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
+      <div className="min-h-full flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full" />
           <p className="text-slate-500 text-sm">{t("loadingData")}</p>
@@ -113,7 +122,7 @@ function DashInfoPage() {
   const khangResolved = stats.khangVe + stats.khangFail;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-6 md:p-10 font-sans text-slate-900">
+    <div className="min-h-full p-6 md:p-10 font-sans text-foreground">
       <div className="max-w-7xl mx-auto space-y-8">
 
         <div className="border-b border-slate-200 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -123,7 +132,7 @@ function DashInfoPage() {
             </h1>
             <p className="text-slate-500 text-sm mt-1">
               {activeBatch
-                ? `Đợt ${activeBatch.label} · Tổng lô ${activeBatch.totalDeclared} info · ${activeBatch.stats.totalInSheet} dòng trong sheet`
+                ? `${batchDisplayLabel(activeBatch)} · Tổng lô ${activeBatch.totalDeclared} info · ${activeBatch.stats.totalInSheet} dòng trong sheet`
                 : `Tổng hợp ${batches.filter((b) => b.stats.totalInSheet > 0).length} đợt có dữ liệu · ${allRecords.length} dòng`}
             </p>
           </div>
@@ -168,7 +177,7 @@ function DashInfoPage() {
                 key={b.id}
                 active={batchFilter === b.id}
                 onClick={() => { setBatchFilter(b.id); setPage(1); }}
-                label={`Đợt ${b.label}`}
+                label={batchDisplayLabel(b)}
                 sub={b.stats.totalInSheet > 0
                   ? `${b.stats.totalInSheet} dòng · EIN ${b.stats.einEligible}/${b.stats.einInfoTotal} (${b.stats.einRate}%)`
                   : `${b.totalDeclared} info khai báo · chưa có dòng`}
@@ -226,21 +235,23 @@ function DashInfoPage() {
           />
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-3">
           <MiniStat label="Tổng lô" value={stats.totalDeclared} hint="Toàn bộ đợt" />
           <MiniStat label="Info đã có" value={stats.einInfoTotal} color="text-indigo-600" hint="Mẫu số EIN" />
           <MiniStat label="Doanh nghiệp" value={stats.einEligible} color="text-blue-600" hint="Xin được EIN" />
           <MiniStat label="Đã in doc DN" value={stats.einSubmitted} color="text-blue-500" hint="Có file doc" />
           <MiniStat label="Chưa xin info" value={stats.chuaXinInfo} color="text-slate-400" hint="Không tính EIN" />
           <MiniStat label="Cá nhân" value={stats.caNhan} color="text-purple-600" hint="Không tính EIN" />
-          <MiniStat label="Kháng về" value={stats.khangVe} color="text-emerald-600" />
+          <MiniStat label="Kháng về" value={stats.khangVe} color="text-emerald-600" hint="Gồm đợt 2 về" />
           <MiniStat label="Chưa kháng" value={stats.chuaKhang} color="text-amber-600" />
+          <MiniStat label="Reg lại info" value={stats.regLaiInfo} color="text-sky-600" />
         </div>
 
         {khangResolved > 0 && (
           <p className="text-xs text-slate-500 -mt-4">
             Tỉ lệ kháng: {stats.khangVe} kháng về + {stats.khangFail} fail = {khangResolved} đã xử lý
             {stats.chuaKhang > 0 && ` · ${stats.chuaKhang} chưa kháng không tính`}
+            {stats.regLaiInfo > 0 && ` · ${stats.regLaiInfo} reg lại info không tính`}
           </p>
         )}
 
@@ -251,7 +262,7 @@ function DashInfoPage() {
                 Phân loại theo người cầm info
                 {activeBatch ? ` · Đợt ${activeBatch.label}` : ""}
               </h3>
-              <p className="text-xs text-slate-400 mt-1">Cột Tên trên sheet — số info và kháng về mỗi người</p>
+              <p className="text-xs text-slate-400 mt-1">Cột Tên trên sheet — số info và kháng về mỗi người. Kháng đợt 2 về vẫn tính thành công.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[640px]">
@@ -263,6 +274,7 @@ function DashInfoPage() {
                     <th className="px-5 py-3 text-center">Kháng về</th>
                     <th className="px-5 py-3 text-center">Fail</th>
                     <th className="px-5 py-3 text-center">Chưa kháng</th>
+                    <th className="px-5 py-3 text-center">Reg lại</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -278,6 +290,7 @@ function DashInfoPage() {
                     <td className="px-5 py-3 text-center text-emerald-600">{ownerStats.reduce((s, o) => s + o.khangVe, 0)}</td>
                     <td className="px-5 py-3 text-center text-red-500">{ownerStats.reduce((s, o) => s + o.khangFail, 0)}</td>
                     <td className="px-5 py-3 text-center text-amber-600">{ownerStats.reduce((s, o) => s + o.chuaKhang, 0)}</td>
+                    <td className="px-5 py-3 text-center text-sky-600">{ownerStats.reduce((s, o) => s + o.regLaiInfo, 0)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -317,7 +330,8 @@ function DashInfoPage() {
                   <th className="px-4 py-3">Dev</th>
                   <th className="px-4 py-3">Loại Doc</th>
                   <th className="px-4 py-3">Doc DN</th>
-                  <th className="px-4 py-3">Trạng thái kháng</th>
+                  <th className="px-4 py-3">Trạng thái</th>
+                  <th className="px-4 py-3">Kháng đợt 2</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -326,7 +340,7 @@ function DashInfoPage() {
                 ))}
                 {pageItems.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-slate-400 text-sm">
+                    <td colSpan={9} className="px-4 py-12 text-center text-slate-400 text-sm">
                       Không tìm thấy dòng nào
                     </td>
                   </tr>
@@ -376,7 +390,7 @@ function BatchCompareRow({ batch, onSelect }: { batch: InfoBoBatch; onSelect: ()
   const noData = s.totalInSheet === 0;
   return (
     <tr className="hover:bg-slate-50 cursor-pointer" onClick={onSelect}>
-      <td className="px-5 py-3 font-semibold text-slate-800">{batch.label}</td>
+      <td className="px-5 py-3 font-semibold text-slate-800">{batchDisplayLabel(batch)}</td>
       <td className="px-5 py-3 text-center text-blue-600 font-bold">
         {noData ? "—" : (
           <>
@@ -421,8 +435,12 @@ function KhangRateCard({ stats }: { stats: InfoBoStats }) {
       </div>
       <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-500 space-y-1">
         <p>Chỉ tính <strong>kháng về + fail</strong> ({resolved} case đã xử lý)</p>
+        <p>Kháng đợt 2 về vẫn tính kháng thành công</p>
         {stats.chuaKhang > 0 && (
           <p className="text-amber-600">{stats.chuaKhang} chưa kháng — không tính vào tỉ lệ</p>
+        )}
+        {stats.regLaiInfo > 0 && (
+          <p className="text-sky-600">{stats.regLaiInfo} reg lại info — không tính vào tỉ lệ</p>
         )}
       </div>
     </div>
@@ -481,29 +499,44 @@ function OwnerStatsRow({ owner, showBatch }: { owner: InfoBoOwnerStats; showBatc
       <td className="px-5 py-3 text-center font-bold text-emerald-600">{owner.khangVe}</td>
       <td className="px-5 py-3 text-center font-bold text-red-500">{owner.khangFail}</td>
       <td className="px-5 py-3 text-center font-medium text-amber-600">{owner.chuaKhang}</td>
+      <td className="px-5 py-3 text-center font-medium text-sky-600">{owner.regLaiInfo}</td>
     </tr>
   );
 }
 
-function StatusBadge({ item }: { item: InfoBoRecord }) {
-  if (item.isKhangVe) {
+function StatusBadge({
+  status,
+  fromDot2 = false,
+}: {
+  status: InfoBoRecord["khangStatus"] | string;
+  fromDot2?: boolean;
+}) {
+  const suffix = fromDot2 ? " · đợt 2" : "";
+  if (status === "khang_ve") {
     return (
       <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-        Kháng về
+        Kháng về{suffix}
       </span>
     );
   }
-  if (item.isKhangFail) {
+  if (status === "fail") {
     return (
       <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-200">
-        Fail
+        Fail{suffix}
       </span>
     );
   }
-  if (item.isChuaKhang) {
+  if (status === "chua_khang") {
     return (
       <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-        Chưa kháng
+        Chưa kháng{suffix}
+      </span>
+    );
+  }
+  if (status === "reg_lai") {
+    return (
+      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200">
+        Reg lại info{suffix}
       </span>
     );
   }
@@ -545,7 +578,12 @@ function InfoRow({ item }: { item: InfoBoRecord }) {
               : "—"}
       </td>
       <td className="px-4 py-3">
-        <StatusBadge item={item} />
+        <StatusBadge status={parseKhangStatus(item.trangThai)} />
+      </td>
+      <td className="px-4 py-3">
+        {item.khangDot2
+          ? <StatusBadge status={parseKhangStatus(item.khangDot2)} fromDot2 />
+          : <span className="text-xs text-slate-400">—</span>}
       </td>
     </tr>
   );

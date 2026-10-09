@@ -3,6 +3,10 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { handleAppPlatformApi } from "./lib/appPlatformApi";
+import { handleNamecheapApi } from "./lib/namecheapApi";
+import { handleDomainSaleApi } from "./lib/domainSaleApi";
+import { handleGoogleAuthApi } from "./lib/googleAuthApi";
+import { handleGmailShopifyApi } from "./lib/gmailShopifyApi";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -73,6 +77,18 @@ export default {
       const pathname = new URL(request.url).pathname;
       if (pathname === "/api/app-platform") {
         return await handleAppPlatformApi(request, env);
+      }
+      if (pathname === "/api/namecheap/domains") {
+        return await handleNamecheapApi(request, env);
+      }
+      if (pathname === "/api/domain-sale") {
+        return await handleDomainSaleApi(request, env);
+      }
+      if (pathname.startsWith("/api/auth/")) {
+        return await handleGoogleAuthApi(request, env);
+      }
+      if (pathname.startsWith("/api/gmail/")) {
+        return await handleGmailShopifyApi(request, env);
       }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

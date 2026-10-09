@@ -12,7 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WordpressRouteImport } from './routes/wordpress'
 import { Route as WebShieldKpiRouteImport } from './routes/web-shield-kpi'
 import { Route as WebKpiRouteImport } from './routes/web-kpi'
+import { Route as ShopifyOrdersRouteImport } from './routes/shopify-orders'
 import { Route as ShopifyCostCheckRouteImport } from './routes/shopify-cost-check'
+import { Route as ShopifyBillsRouteImport } from './routes/shopify-bills'
 import { Route as ShopifyRouteImport } from './routes/shopify'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
@@ -21,6 +23,8 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as DomainsRouteImport } from './routes/domains'
+import { Route as DomainCanBanRouteImport } from './routes/domain-can-ban'
+import { Route as GmcSalaryRouteImport } from './routes/gmc-salary'
 import { Route as DashInfoRouteImport } from './routes/dash-info'
 import { Route as CustomersRouteImport } from './routes/customers'
 import { Route as AppPlatformRouteImport } from './routes/app-platform'
@@ -41,9 +45,19 @@ const WebKpiRoute = WebKpiRouteImport.update({
   path: '/web-kpi',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShopifyOrdersRoute = ShopifyOrdersRouteImport.update({
+  id: '/shopify-orders',
+  path: '/shopify-orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShopifyCostCheckRoute = ShopifyCostCheckRouteImport.update({
   id: '/shopify-cost-check',
   path: '/shopify-cost-check',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShopifyBillsRoute = ShopifyBillsRouteImport.update({
+  id: '/shopify-bills',
+  path: '/shopify-bills',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShopifyRoute = ShopifyRouteImport.update({
@@ -86,6 +100,16 @@ const DomainsRoute = DomainsRouteImport.update({
   path: '/domains',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DomainCanBanRoute = DomainCanBanRouteImport.update({
+  id: '/domain-can-ban',
+  path: '/domain-can-ban',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GmcSalaryRoute = GmcSalaryRouteImport.update({
+  id: '/gmc-salary',
+  path: '/gmc-salary',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashInfoRoute = DashInfoRouteImport.update({
   id: '/dash-info',
   path: '/dash-info',
@@ -112,7 +136,9 @@ export interface FileRoutesByFullPath {
   '/app-platform': typeof AppPlatformRoute
   '/customers': typeof CustomersRoute
   '/dash-info': typeof DashInfoRoute
+  '/domain-can-ban': typeof DomainCanBanRoute
   '/domains': typeof DomainsRoute
+  '/gmc-salary': typeof GmcSalaryRoute
   '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
@@ -120,7 +146,9 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
+  '/shopify-bills': typeof ShopifyBillsRoute
   '/shopify-cost-check': typeof ShopifyCostCheckRoute
+  '/shopify-orders': typeof ShopifyOrdersRoute
   '/web-kpi': typeof WebKpiRoute
   '/web-shield-kpi': typeof WebShieldKpiRoute
   '/wordpress': typeof WordpressRoute
@@ -130,7 +158,9 @@ export interface FileRoutesByTo {
   '/app-platform': typeof AppPlatformRoute
   '/customers': typeof CustomersRoute
   '/dash-info': typeof DashInfoRoute
+  '/domain-can-ban': typeof DomainCanBanRoute
   '/domains': typeof DomainsRoute
+  '/gmc-salary': typeof GmcSalaryRoute
   '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
@@ -138,7 +168,9 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
+  '/shopify-bills': typeof ShopifyBillsRoute
   '/shopify-cost-check': typeof ShopifyCostCheckRoute
+  '/shopify-orders': typeof ShopifyOrdersRoute
   '/web-kpi': typeof WebKpiRoute
   '/web-shield-kpi': typeof WebShieldKpiRoute
   '/wordpress': typeof WordpressRoute
@@ -149,7 +181,9 @@ export interface FileRoutesById {
   '/app-platform': typeof AppPlatformRoute
   '/customers': typeof CustomersRoute
   '/dash-info': typeof DashInfoRoute
+  '/domain-can-ban': typeof DomainCanBanRoute
   '/domains': typeof DomainsRoute
+  '/gmc-salary': typeof GmcSalaryRoute
   '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
@@ -157,7 +191,9 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/shopify': typeof ShopifyRoute
+  '/shopify-bills': typeof ShopifyBillsRoute
   '/shopify-cost-check': typeof ShopifyCostCheckRoute
+  '/shopify-orders': typeof ShopifyOrdersRoute
   '/web-kpi': typeof WebKpiRoute
   '/web-shield-kpi': typeof WebShieldKpiRoute
   '/wordpress': typeof WordpressRoute
@@ -169,7 +205,9 @@ export interface FileRouteTypes {
     | '/app-platform'
     | '/customers'
     | '/dash-info'
+    | '/domain-can-ban'
     | '/domains'
+    | '/gmc-salary'
     | '/invoices'
     | '/login'
     | '/profile'
@@ -177,7 +215,9 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/shopify'
+    | '/shopify-bills'
     | '/shopify-cost-check'
+    | '/shopify-orders'
     | '/web-kpi'
     | '/web-shield-kpi'
     | '/wordpress'
@@ -187,7 +227,9 @@ export interface FileRouteTypes {
     | '/app-platform'
     | '/customers'
     | '/dash-info'
+    | '/domain-can-ban'
     | '/domains'
+    | '/gmc-salary'
     | '/invoices'
     | '/login'
     | '/profile'
@@ -195,7 +237,9 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/shopify'
+    | '/shopify-bills'
     | '/shopify-cost-check'
+    | '/shopify-orders'
     | '/web-kpi'
     | '/web-shield-kpi'
     | '/wordpress'
@@ -205,7 +249,9 @@ export interface FileRouteTypes {
     | '/app-platform'
     | '/customers'
     | '/dash-info'
+    | '/domain-can-ban'
     | '/domains'
+    | '/gmc-salary'
     | '/invoices'
     | '/login'
     | '/profile'
@@ -213,7 +259,9 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/shopify'
+    | '/shopify-bills'
     | '/shopify-cost-check'
+    | '/shopify-orders'
     | '/web-kpi'
     | '/web-shield-kpi'
     | '/wordpress'
@@ -224,7 +272,9 @@ export interface RootRouteChildren {
   AppPlatformRoute: typeof AppPlatformRoute
   CustomersRoute: typeof CustomersRoute
   DashInfoRoute: typeof DashInfoRoute
+  DomainCanBanRoute: typeof DomainCanBanRoute
   DomainsRoute: typeof DomainsRoute
+  GmcSalaryRoute: typeof GmcSalaryRoute
   InvoicesRoute: typeof InvoicesRoute
   LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
@@ -232,7 +282,9 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   ShopifyRoute: typeof ShopifyRoute
+  ShopifyBillsRoute: typeof ShopifyBillsRoute
   ShopifyCostCheckRoute: typeof ShopifyCostCheckRoute
+  ShopifyOrdersRoute: typeof ShopifyOrdersRoute
   WebKpiRoute: typeof WebKpiRoute
   WebShieldKpiRoute: typeof WebShieldKpiRoute
   WordpressRoute: typeof WordpressRoute
@@ -261,11 +313,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebKpiRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shopify-orders': {
+      id: '/shopify-orders'
+      path: '/shopify-orders'
+      fullPath: '/shopify-orders'
+      preLoaderRoute: typeof ShopifyOrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/shopify-cost-check': {
       id: '/shopify-cost-check'
       path: '/shopify-cost-check'
       fullPath: '/shopify-cost-check'
       preLoaderRoute: typeof ShopifyCostCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shopify-bills': {
+      id: '/shopify-bills'
+      path: '/shopify-bills'
+      fullPath: '/shopify-bills'
+      preLoaderRoute: typeof ShopifyBillsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/shopify': {
@@ -317,11 +383,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InvoicesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/gmc-salary': {
+      id: '/gmc-salary'
+      path: '/gmc-salary'
+      fullPath: '/gmc-salary'
+      preLoaderRoute: typeof GmcSalaryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/domains': {
       id: '/domains'
       path: '/domains'
       fullPath: '/domains'
       preLoaderRoute: typeof DomainsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/domain-can-ban': {
+      id: '/domain-can-ban'
+      path: '/domain-can-ban'
+      fullPath: '/domain-can-ban'
+      preLoaderRoute: typeof DomainCanBanRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dash-info': {
@@ -360,7 +440,9 @@ const rootRouteChildren: RootRouteChildren = {
   AppPlatformRoute: AppPlatformRoute,
   CustomersRoute: CustomersRoute,
   DashInfoRoute: DashInfoRoute,
+  DomainCanBanRoute: DomainCanBanRoute,
   DomainsRoute: DomainsRoute,
+  GmcSalaryRoute: GmcSalaryRoute,
   InvoicesRoute: InvoicesRoute,
   LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
@@ -368,7 +450,9 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   ShopifyRoute: ShopifyRoute,
+  ShopifyBillsRoute: ShopifyBillsRoute,
   ShopifyCostCheckRoute: ShopifyCostCheckRoute,
+  ShopifyOrdersRoute: ShopifyOrdersRoute,
   WebKpiRoute: WebKpiRoute,
   WebShieldKpiRoute: WebShieldKpiRoute,
   WordpressRoute: WordpressRoute,
