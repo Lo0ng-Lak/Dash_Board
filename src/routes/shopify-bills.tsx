@@ -93,6 +93,7 @@ function ShopifyBillsPage() {
     const [search, setSearch] = useState("");
     const [month, setMonth] = useState("all");
     const [kind, setKind] = useState<"all" | BillKind | "open">("all");
+    const [gmc, setGmc] = useState<"all" | "xanh" | "sus" | "none">("all");
     const [reg, setReg] = useState("all");
     const [page, setPage] = useState(1);
     const [box, setBox] = useState("all");
@@ -264,6 +265,40 @@ function ShopifyBillsPage() {
         ];
     }, [scopedYearBills, t]);
 
+    const matchKind = (b: ShopifyEmailBill) => {
+        if (kind === "open") return !b.mark && b.kind !== "failed";
+        if (kind !== "all") return b.kind === kind;
+        return true;
+    };
+
+    const matchGmc = (b: ShopifyEmailBill) => {
+        if (gmc === "all") return true;
+        const note = gmcNoteOf(b, gmcNotes);
+        if (gmc === "none") return !note;
+        return note === gmc;
+    };
+
+    const gmcTabs = useMemo(() => {
+        let xanh = 0;
+        let sus = 0;
+        let none = 0;
+        for (const b of bills) {
+            if (!matchReg(b)) continue;
+            if (month !== "all" && b.month !== month) continue;
+            if (kind === "open" && (b.mark || b.kind === "failed")) continue;
+            if (kind !== "all" && kind !== "open" && b.kind !== kind) continue;
+            const note = gmcNoteOf(b, gmcNotes);
+            if (note === "xanh") xanh += 1;
+            else if (note === "sus") sus += 1;
+            else none += 1;
+        }
+        return [
+            { name: "xanh", count: xanh, label: t("shopifyBillsGmcXanh") },
+            { name: "sus", count: sus, label: t("shopifyBillsGmcSus") },
+            { name: "none", count: none, label: t("shopifyBillsGmcNone") },
+        ];
+    }, [bills, month, kind, reg, regByDomain, gmcNotes, t]);
+
     const mailboxMoney = useMemo(() => {
         return mailboxes.map((mail) => {
             const rows = scopedYearBills.filter((b) => (b.mailbox || "").toLowerCase() === mail.toLowerCase());
@@ -304,8 +339,8 @@ function ShopifyBillsPage() {
         return bills.filter((b) => {
             if (!matchReg(b)) return false;
             if (month !== "all" && b.month !== month) return false;
-            if (kind === "open" && (b.mark || b.kind === "failed")) return false;
-            if (kind !== "all" && kind !== "open" && b.kind !== kind) return false;
+            if (!matchKind(b)) return false;
+            if (!matchGmc(b)) return false;
             if (!q) return true;
             const amt = q.replace(/^\$/, "");
             if (b.amount != null && String(b.amount) === amt) return true;
@@ -314,7 +349,7 @@ function ShopifyBillsPage() {
             const tenReg = lookupBySlug(b, regByDomain) || "";
             return [b.subject, b.from, b.shop, b.snippet, noteText, tenReg, b.mailbox].join(" ").toLowerCase().includes(q);
         });
-    }, [bills, search, month, kind, reg, gmcNotes, regByDomain]);
+    }, [bills, search, month, kind, gmc, reg, gmcNotes, regByDomain]);
 
     const pageRows = filtered.slice((page - 1) * ITEMS, page * ITEMS);
 
@@ -539,6 +574,17 @@ function ShopifyBillsPage() {
                                 setPage(1);
                             }}
                             allLabel={t("shopifyBillsKindAll")}
+                        />
+
+                        <DevKpiTabs
+                            items={gmcTabs}
+                            totalCount={gmcTabs.reduce((s, item) => s + item.count, 0)}
+                            selected={gmc}
+                            onSelect={(name) => {
+                                setGmc(name as typeof gmc);
+                                setPage(1);
+                            }}
+                            allLabel={t("shopifyBillsGmcAll")}
                         />
 
                         <div className="flex flex-col md:flex-row gap-3">
