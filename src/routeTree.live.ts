@@ -23,6 +23,7 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as GmcSalaryRouteImport } from './routes/gmc-salary'
+import { Route as GmcManageRouteImport } from './routes/gmc-manage'
 import { Route as DomainsRouteImport } from './routes/domains'
 import { Route as DomainCanBanRouteImport } from './routes/domain-can-ban'
 import { Route as DashInfoRouteImport } from './routes/dash-info'
@@ -100,6 +101,11 @@ const GmcSalaryRoute = GmcSalaryRouteImport.update({
   path: '/gmc-salary',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GmcManageRoute = GmcManageRouteImport.update({
+  id: '/gmc-manage',
+  path: '/gmc-manage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DomainsRoute = DomainsRouteImport.update({
   id: '/domains',
   path: '/domains',
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/dash-info': typeof DashInfoRoute
   '/domain-can-ban': typeof DomainCanBanRoute
   '/domains': typeof DomainsRoute
+  '/gmc-manage': typeof GmcManageRoute
   '/gmc-salary': typeof GmcSalaryRoute
   '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
@@ -160,6 +167,7 @@ export interface FileRoutesByTo {
   '/dash-info': typeof DashInfoRoute
   '/domain-can-ban': typeof DomainCanBanRoute
   '/domains': typeof DomainsRoute
+  '/gmc-manage': typeof GmcManageRoute
   '/gmc-salary': typeof GmcSalaryRoute
   '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/dash-info': typeof DashInfoRoute
   '/domain-can-ban': typeof DomainCanBanRoute
   '/domains': typeof DomainsRoute
+  '/gmc-manage': typeof GmcManageRoute
   '/gmc-salary': typeof GmcSalaryRoute
   '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/dash-info'
     | '/domain-can-ban'
     | '/domains'
+    | '/gmc-manage'
     | '/gmc-salary'
     | '/invoices'
     | '/login'
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/dash-info'
     | '/domain-can-ban'
     | '/domains'
+    | '/gmc-manage'
     | '/gmc-salary'
     | '/invoices'
     | '/login'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/dash-info'
     | '/domain-can-ban'
     | '/domains'
+    | '/gmc-manage'
     | '/gmc-salary'
     | '/invoices'
     | '/login'
@@ -274,6 +286,7 @@ export interface RootRouteChildren {
   DashInfoRoute: typeof DashInfoRoute
   DomainCanBanRoute: typeof DomainCanBanRoute
   DomainsRoute: typeof DomainsRoute
+  GmcManageRoute: typeof GmcManageRoute
   GmcSalaryRoute: typeof GmcSalaryRoute
   InvoicesRoute: typeof InvoicesRoute
   LoginRoute: typeof LoginRoute
@@ -390,6 +403,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GmcSalaryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/gmc-manage': {
+      id: '/gmc-manage'
+      path: '/gmc-manage'
+      fullPath: '/gmc-manage'
+      preLoaderRoute: typeof GmcManageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/domains': {
       id: '/domains'
       path: '/domains'
@@ -442,6 +462,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashInfoRoute: DashInfoRoute,
   DomainCanBanRoute: DomainCanBanRoute,
   DomainsRoute: DomainsRoute,
+  GmcManageRoute: GmcManageRoute,
   GmcSalaryRoute: GmcSalaryRoute,
   InvoicesRoute: InvoicesRoute,
   LoginRoute: LoginRoute,

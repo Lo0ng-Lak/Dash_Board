@@ -250,6 +250,7 @@ function RootComponent() {
 
   // 📋 Chuyển đổi 'label' sang 'labelKey' khớp chính xác với file i18n.ts
   const navItems = [
+    { to: "/gmc-manage", labelKey: "gmcManage" },
     { to: "/customers", labelKey: "regGmc" },
     { to: "/gmc-salary", labelKey: "gmcSalaryTitle" },
     { to: "/dash-info", labelKey: "dashInfo" },

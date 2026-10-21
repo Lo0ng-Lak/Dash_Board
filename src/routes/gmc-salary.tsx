@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { GmcSalarySummary } from "@/components/gmc-salary-summary";
-import { getAllDataWeb, getGMCRegData, isValidGmcWebDomain } from "@/lib/dataService";
+import { getGMCRegData, isValidGmcWebDomain } from "@/lib/dataService";
 import { parseDmyDate } from "@/lib/kpiWeek";
 
 const parseGmcMonth = (dateGMC: string): string | null => {
@@ -23,12 +23,6 @@ function GmcSalaryPage() {
     queryFn: () => getGMCRegData(true),
     refetchInterval: 30000,
   });
-  const { data: webRaw = [], isLoading: webLoading } = useQuery({
-    queryKey: ["allDataWeb"],
-    queryFn: () => getAllDataWeb(true),
-    refetchInterval: 30000,
-  });
-
   const rows = useMemo(
     () =>
       raw
@@ -36,6 +30,7 @@ function GmcSalaryPage() {
         .map((item) => ({
           domain: item.domain,
           dev: item.dev?.trim() || "",
+          webDev: item.webDev?.trim() || "",
           dateGMC: item.dateGMC,
           status: item.status,
           linkAdsEgead: item.linkAdsEgead,
@@ -44,21 +39,7 @@ function GmcSalaryPage() {
     [raw],
   );
 
-  const webRows = useMemo(
-    () =>
-      webRaw.map((item) => ({
-        domain: item.domain,
-        dev: item.dev?.trim() || "",
-        status: item.status,
-        webType: item.webType,
-        completedDate: item.completedDate,
-        rawCompletedDate: item.rawCompletedDate,
-        month: item.month,
-      })),
-    [webRaw],
-  );
-
-  if (isLoading || webLoading) {
+  if (isLoading) {
     return (
       <div className="p-10 text-center font-medium text-slate-400 animate-pulse">
         {t("loadingSystemData")}
@@ -69,7 +50,7 @@ function GmcSalaryPage() {
   return (
     <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto">
-        <GmcSalarySummary rows={rows} webRows={webRows} parseMonth={parseGmcMonth} />
+        <GmcSalarySummary rows={rows} parseMonth={parseGmcMonth} />
       </div>
     </div>
   );

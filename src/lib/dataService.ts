@@ -469,6 +469,18 @@ const gmcRegRowVal = (row: Record<string, unknown>, ...keys: string[]) => {
     return "";
 };
 
+/** Khớp đúng tên cột, không fuzzy (tránh "DEV" dính cột khác có chữ dev). */
+const gmcRegExact = (row: Record<string, unknown>, ...keys: string[]) => {
+    const wanted = new Set(keys.map((k) => k.toLowerCase().replace(/\s+/g, " ").trim()));
+    for (const [rawKey, val] of Object.entries(row)) {
+        const nk = rawKey.toLowerCase().replace(/\s+/g, " ").trim();
+        if (!wanted.has(nk)) continue;
+        const s = cleanCell(String(val ?? ""));
+        if (s) return s;
+    }
+    return "";
+};
+
 /** Chỉ lấy đúng cột WEB — không fuzzy (tránh nhầm "Loại web" → shopify) */
 const gmcWebVal = (row: Record<string, unknown>): string => {
     for (const key of ["WEB", "Web"]) {
@@ -516,8 +528,9 @@ export const getGMCRegData = async (forceRefresh = false) => {
             reportDateGMC: gmcRegRowVal(r, "Báo cáo ngày về") || "—",
             webType: gmcRegRowVal(r, "Loại web") || "—",
             status: gmcRegRowVal(r, "Tình Trạng Sus", "Tình trạng Sus") || "Xanh",
-            // KPI TỔNG REG: cột REG = người đăng ký; không lấy DEV
+            // KPI TỔNG REG: cột REG = người đăng ký; cột DEV = người làm web
             dev: gmcRegRowVal(r, "REG", "Người Reg", "Tên Reg"),
+            webDev: gmcRegExact(r, "DEV"),
             adsDate: gmcRegRowVal(r, "Ngày chạy Ads") || "—",
             linkAdsEgead: gmcRegRowVal(r, "Link ads vs egead", "Báo cáo ngày link ads vs egead") || "—",
             dateSus: gmcRegRowVal(r, "Ngày Sus") || "—",
