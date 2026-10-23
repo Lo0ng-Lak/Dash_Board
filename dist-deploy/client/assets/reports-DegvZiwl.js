@@ -1,1 +1,0 @@
-import{j as o}from"./index-C8R0EyWD.js";import{P as e}from"./page-placeholder-IqXQhAMY.js";const n=()=>o.jsx(e,{title:"Reports",icon:"📈",desc:"Revenue and operational reports."});export{n as component};

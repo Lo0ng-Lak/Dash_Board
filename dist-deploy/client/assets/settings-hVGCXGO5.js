@@ -1,1 +1,0 @@
-import{j as t}from"./index-C8R0EyWD.js";import{P as n}from"./page-placeholder-IqXQhAMY.js";function i(){return t.jsx("div",{children:t.jsx(n,{title:"Settings",icon:"⚙️",desc:"System and account configuration."})})}export{i as component};

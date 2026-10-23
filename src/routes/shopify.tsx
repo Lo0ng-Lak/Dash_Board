@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { getShopifyData, ShopifyRecord } from "@/lib/dataService";
+import type { ShopifyEmailBill } from "@/lib/gmailShopifyApi";
 import { Pagination } from "@/components/pagination";
 import { useTranslation } from "react-i18next";
 import {
@@ -11,6 +12,27 @@ import {
 
 const ITEMS = 12;
 const EXPIRING_DAYS = 15;
+const BILL_YEAR = 2026;
+
+const slugKey = (raw: string) =>
+  raw
+    .toLowerCase()
+    .trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .replace(/\.myshopify\.com$/, "")
+    .split(".")[0]
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+
+const fmtUSD = (n: number) =>
+  n % 1 === 0
+    ? `$${n.toLocaleString()}`
+    : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+type PlanStat = { latest: number; total: number; months: { month: string; amount: number }[] };
 
 const fmtMonth = (ym: string) => {
   const [y, m] = ym.split("-");
@@ -55,12 +77,72 @@ function ShopifyPage() {
   const [regFilter, setRegFilter] = useState("all");
   const [expiringOnly, setExpiringOnly] = useState(false);
   const [page, setPage] = useState(1);
+  const [openPlan, setOpenPlan] = useState<string | null>(null);
 
   const { data: records = [], isLoading } = useQuery({
     queryKey: ["shopifyData"],
     queryFn: () => getShopifyData(true),
     refetchInterval: 30000,
   });
+
+  const statusQ = useQuery({
+    queryKey: ["gmailStatus"],
+    queryFn: async () => {
+      const res = await fetch("/api/gmail/status", { credentials: "include" });
+      return (await res.json()) as { connected?: boolean; mailbox?: string; mailboxes?: string[] };
+    },
+  });
+
+  const mailboxes = statusQ.data?.mailboxes?.length
+    ? statusQ.data.mailboxes
+    : statusQ.data?.mailbox
+      ? [statusQ.data.mailbox]
+      : [];
+  const mailboxKey = mailboxes.join("|");
+
+  const billsQ = useQuery({
+    queryKey: ["shopifyEmailBills", BILL_YEAR, "plan-credit", "all", mailboxKey],
+    enabled: !!statusQ.data?.connected,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const res = await fetch(`/api/gmail/shopify-bills?year=${BILL_YEAR}&limit=200&mailbox=all`, { credentials: "include" });
+      const json = (await res.json()) as { bills?: ShopifyEmailBill[]; error?: string };
+      if (!res.ok) throw new Error(json.error || "Gmail error");
+      return json;
+    },
+  });
+
+  const planBySlug = useMemo(() => {
+    const acc = new Map<string, Map<string, number>>();
+    for (const bill of billsQ.data?.bills ?? []) {
+      if (bill.kind !== "invoice" || !(bill.planAmount > 0)) continue;
+      const keys = new Set<string>();
+      for (const hint of [bill.domain, bill.shop]) {
+        const key = slugKey(hint || "");
+        if (key.length >= 3) keys.add(key);
+      }
+      for (const key of keys) {
+        const months = acc.get(key) || new Map<string, number>();
+        months.set(bill.month, (months.get(bill.month) || 0) + bill.planAmount);
+        acc.set(key, months);
+      }
+    }
+    const out = new Map<string, PlanStat>();
+    for (const [key, months] of acc) {
+      const list = [...months.entries()]
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([month, amount]) => ({ month, amount }));
+      out.set(key, {
+        latest: list[0]?.amount ?? 0,
+        total: list.reduce((sum, row) => sum + row.amount, 0),
+        months: list,
+      });
+    }
+    return out;
+  }, [billsQ.data]);
+
+  const planOf = (web: string) => planBySlug.get(slugKey(web)) ?? null;
 
   const thisMonthKey = useMemo(() => currentMonthKey(), []);
 
@@ -282,31 +364,50 @@ function ShopifyPage() {
         {/* Table */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left table-fixed min-w-[1100px]">
+            <table className="w-full text-left table-fixed min-w-[1240px]">
               <thead>
                 <tr className="bg-slate-50 border-b text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  <th className="p-4 w-[12%]">{t("thRegistrant")}</th>
-                  <th className="p-4 w-[20%]">{t("thWebsite")}</th>
-                  <th className="p-4 w-[10%]">{t("shopifyRegDate")}</th>
-                  <th className="p-4 w-[10%]">{t("shopifyExpiryDate")}</th>
+                  <th className="p-4 w-[11%]">{t("thRegistrant")}</th>
+                  <th className="p-4 w-[16%]">{t("thWebsite")}</th>
+                  <th className="p-4 w-[12%]">{t("shopifyPlanFee")}</th>
+                  <th className="p-4 w-[9%]">{t("shopifyRegDate")}</th>
+                  <th className="p-4 w-[9%]">{t("shopifyExpiryDate")}</th>
                   <th className="p-4 w-[8%] text-center">{t("shopifyDaysLeft")}</th>
-                  <th className="p-4 w-[14%]">{t("thAdsCard")}</th>
-                  <th className="p-4 w-[12%]">{t("shopifyWebhooks")}</th>
+                  <th className="p-4 w-[13%]">{t("thAdsCard")}</th>
+                  <th className="p-4 w-[11%]">{t("shopifyWebhooks")}</th>
                   <th className="p-4 w-[8%]">{t("status")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {paginated.map((r, i) => (
-                  <tr
-                    key={`${r.web}-${i}`}
-                    className={`hover:bg-slate-50/60 ${isExpiringSoon(r) ? "bg-amber-50/50" : ""}`}
-                  >
+                {paginated.map((r, i) => {
+                  const planKey = r.web.toLowerCase();
+                  const plan = planOf(r.web);
+                  const planOpen = openPlan === planKey;
+                  return (
+                  <Fragment key={`${r.web}-${i}`}>
+                  <tr className={`hover:bg-slate-50/60 ${isExpiringSoon(r) ? "bg-amber-50/50" : ""}`}>
                     <td className="p-4">
                       <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg uppercase">
                         {r.nguoiReg || "—"}
                       </span>
                     </td>
                     <td className="p-4 text-sm font-bold text-slate-700 lowercase truncate">{r.web}</td>
+                    <td className="p-4">
+                      {plan ? (
+                        <button
+                          type="button"
+                          onClick={() => setOpenPlan(planOpen ? null : planKey)}
+                          className={`text-left rounded-xl px-2 py-1 transition-all ${planOpen ? "bg-indigo-50" : "hover:bg-indigo-50"}`}
+                        >
+                          <span className="block text-sm font-black text-slate-800">{fmtUSD(plan.latest)}</span>
+                          <span className="block text-[10px] font-bold text-indigo-500">
+                            {t("shopifyPlanMonthCount", { count: plan.months.length })}
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="text-slate-300">{billsQ.isLoading ? "…" : "—"}</span>
+                      )}
+                    </td>
                     <td className="p-4 text-[11px] font-bold text-slate-500 whitespace-nowrap">{r.ngayDangKy || "—"}</td>
                     <td className="p-4 text-[11px] font-bold text-slate-500 whitespace-nowrap">{r.ngayHetHan || "—"}</td>
                     <td className="p-4 text-center"><DaysLeftBadge days={r.isCanceled ? null : r.daysLeft} /></td>
@@ -322,10 +423,28 @@ function ShopifyPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  {planOpen && plan && (
+                    <tr className="bg-indigo-50/70">
+                      <td colSpan={9} className="px-4 py-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-2">
+                          {t("shopifyPlanMonths")} · {fmtUSD(plan.total)}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {plan.months.map((row) => (
+                            <span key={row.month} className="px-3 py-1.5 rounded-lg bg-white border border-indigo-100 text-xs font-bold text-slate-700">
+                              {fmtMonth(row.month)} · {fmtUSD(row.amount)}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  );
+                })}
                 {paginated.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="text-center p-14 text-sm text-slate-400">{t("noMatchingRecords")}</td>
+                    <td colSpan={9} className="text-center p-14 text-sm text-slate-400">{t("noMatchingRecords")}</td>
                   </tr>
                 )}
               </tbody>
