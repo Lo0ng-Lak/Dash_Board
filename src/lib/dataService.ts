@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { DEFAULT_SHEET_LINKS, INFO_WEB_SHEET_ID, REG_KPI_SHEETS, VE_BO_SHEET_ID, WEB_SHIELD_SHEETS } from "./sheetConfig";
+import { DEFAULT_SHEET_LINKS, INFO_WEB_SHEET_ID, REG_KPI_SHEETS, VE_BO_SHEET_ID, WEB_SHIELD_MANAGE_SHEETS, WEB_SHIELD_SHEETS } from "./sheetConfig";
 
 const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD ?? DEFAULT_SHEET_LINKS.REBUILD;
 const LINK_SHOPIFY = import.meta.env.VITE_LINK_TAB_SHOPIFY ?? DEFAULT_SHEET_LINKS.SHOPIFY;
@@ -22,6 +22,7 @@ let cachedDataNew: DomainSheetData | null = null;
 let cachedData: any[] | null = null;
 let cachedAllData: any[] | null = null;
 let cachedWebShieldData: WebShieldRecord[] | null = null;
+let cachedWebShieldManage: WebShieldManageRecord[] | null = null;
 let cachedGmcRegData: any = null;
 let cachedInfoBoData: InfoBoSheetData | null = null;
 
@@ -261,6 +262,50 @@ const parseWebShieldRows = (
     }
 
     return records;
+};
+
+export interface WebShieldManageRecord {
+    sheetId: string;
+    sheetName: string;
+    web: string;
+    dev: string;
+    cong: string;
+    webStatus: string;
+    tinhTrang: string;
+}
+
+export const getWebShieldManageData = async (forceRefresh = false): Promise<WebShieldManageRecord[]> => {
+    if (cachedWebShieldManage && !forceRefresh) return cachedWebShieldManage;
+    try {
+        const timestamp = Date.now();
+        const batches = await Promise.all(
+            WEB_SHIELD_MANAGE_SHEETS.map(async (sheet) => {
+                const baseUrl = `https://docs.google.com/spreadsheets/d/e/${INFO_WEB_SHEET_ID}/pub?output=csv&gid=${sheet.gid}`;
+                const csv = await fetch(`${baseUrl}&t=${timestamp}`, { cache: "no-store" }).then((r) => r.text());
+                const rows = rowsFromWebShieldCsv(csv);
+                const records: WebShieldManageRecord[] = [];
+                for (const row of rows) {
+                    const web = cleanWebShieldDomain(webShieldRowVal(row, "web shield", "Web", "Web Shield"));
+                    if (!web || !web.includes(".")) continue;
+                    records.push({
+                        sheetId: sheet.id,
+                        sheetName: sheet.name,
+                        web,
+                        dev: webShieldRowVal(row, "Dev", "DEV"),
+                        cong: webShieldRowVal(row, "Cổng", "Cong", "Cổng"),
+                        webStatus: webShieldRowVal(row, "Trạng thái web", "Trang thai web"),
+                        tinhTrang: webShieldRowVal(row, "Tình Trạng", "Tinh Trang", "tinh trang", "Done"),
+                    });
+                }
+                return records;
+            }),
+        );
+        cachedWebShieldManage = batches.flat();
+        return cachedWebShieldManage;
+    } catch (error) {
+        console.error("Web Shield manage fetch error:", error);
+        return [];
+    }
 };
 
 export const getWebShieldData = async (forceRefresh = false): Promise<WebShieldRecord[]> => {

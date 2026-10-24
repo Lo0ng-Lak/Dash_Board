@@ -3,6 +3,7 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { handleAppPlatformApi } from "./lib/appPlatformApi";
+import { handleWebShieldSetupApi } from "./lib/webShieldSetupApi";
 import { handleNamecheapApi } from "./lib/namecheapApi";
 import { handleDomainSaleApi } from "./lib/domainSaleApi";
 import { handleGoogleAuthApi } from "./lib/googleAuthApi";
@@ -77,6 +78,9 @@ export default {
       const pathname = new URL(request.url).pathname;
       if (pathname === "/api/app-platform") {
         return await handleAppPlatformApi(request, env);
+      }
+      if (pathname === "/api/web-shield/setup") {
+        return await handleWebShieldSetupApi(request);
       }
       if (pathname === "/api/namecheap/domains") {
         return await handleNamecheapApi(request, env);

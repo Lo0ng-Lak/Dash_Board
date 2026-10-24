@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WordpressRouteImport } from './routes/wordpress'
+import { Route as WebShieldManageRouteImport } from './routes/web-shield-manage'
 import { Route as WebShieldKpiRouteImport } from './routes/web-shield-kpi'
 import { Route as WebKpiRouteImport } from './routes/web-kpi'
 import { Route as ShopifyOrdersRouteImport } from './routes/shopify-orders'
@@ -34,6 +35,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const WordpressRoute = WordpressRouteImport.update({
   id: '/wordpress',
   path: '/wordpress',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebShieldManageRoute = WebShieldManageRouteImport.update({
+  id: '/web-shield-manage',
+  path: '/web-shield-manage',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WebShieldKpiRoute = WebShieldKpiRouteImport.update({
@@ -158,6 +164,7 @@ export interface FileRoutesByFullPath {
   '/shopify-orders': typeof ShopifyOrdersRoute
   '/web-kpi': typeof WebKpiRoute
   '/web-shield-kpi': typeof WebShieldKpiRoute
+  '/web-shield-manage': typeof WebShieldManageRoute
   '/wordpress': typeof WordpressRoute
 }
 export interface FileRoutesByTo {
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/shopify-orders': typeof ShopifyOrdersRoute
   '/web-kpi': typeof WebKpiRoute
   '/web-shield-kpi': typeof WebShieldKpiRoute
+  '/web-shield-manage': typeof WebShieldManageRoute
   '/wordpress': typeof WordpressRoute
 }
 export interface FileRoutesById {
@@ -205,6 +213,7 @@ export interface FileRoutesById {
   '/shopify-orders': typeof ShopifyOrdersRoute
   '/web-kpi': typeof WebKpiRoute
   '/web-shield-kpi': typeof WebShieldKpiRoute
+  '/web-shield-manage': typeof WebShieldManageRoute
   '/wordpress': typeof WordpressRoute
 }
 export interface FileRouteTypes {
@@ -230,6 +239,7 @@ export interface FileRouteTypes {
     | '/shopify-orders'
     | '/web-kpi'
     | '/web-shield-kpi'
+    | '/web-shield-manage'
     | '/wordpress'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/shopify-orders'
     | '/web-kpi'
     | '/web-shield-kpi'
+    | '/web-shield-manage'
     | '/wordpress'
   id:
     | '__root__'
@@ -276,6 +287,7 @@ export interface FileRouteTypes {
     | '/shopify-orders'
     | '/web-kpi'
     | '/web-shield-kpi'
+    | '/web-shield-manage'
     | '/wordpress'
   fileRoutesById: FileRoutesById
 }
@@ -300,6 +312,7 @@ export interface RootRouteChildren {
   ShopifyOrdersRoute: typeof ShopifyOrdersRoute
   WebKpiRoute: typeof WebKpiRoute
   WebShieldKpiRoute: typeof WebShieldKpiRoute
+  WebShieldManageRoute: typeof WebShieldManageRoute
   WordpressRoute: typeof WordpressRoute
 }
 
@@ -310,6 +323,13 @@ declare module '@tanstack/react-router' {
       path: '/wordpress'
       fullPath: '/wordpress'
       preLoaderRoute: typeof WordpressRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/web-shield-manage': {
+      id: '/web-shield-manage'
+      path: '/web-shield-manage'
+      fullPath: '/web-shield-manage'
+      preLoaderRoute: typeof WebShieldManageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/web-shield-kpi': {
@@ -476,6 +496,7 @@ const rootRouteChildren: RootRouteChildren = {
   ShopifyOrdersRoute: ShopifyOrdersRoute,
   WebKpiRoute: WebKpiRoute,
   WebShieldKpiRoute: WebShieldKpiRoute,
+  WebShieldManageRoute: WebShieldManageRoute,
   WordpressRoute: WordpressRoute,
 }
 export const routeTree = rootRouteImport

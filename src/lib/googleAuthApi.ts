@@ -19,6 +19,9 @@ export type AuthUser = {
 };
 
 const SESSION_COOKIE = "egead_session";
+const LOCAL_ADMIN_USER = "admin";
+const LOCAL_ADMIN_EMAIL = "admin@egead.local";
+const LOCAL_ADMIN_PASS_SHA256 = "4c05d2ec76a943f30fc9f464a570d785e87cb3dba17207d6c978f57cfd1a3058";
 const STATE_COOKIE = "egead_oauth_state";
 const KV_ALLOW_KEY = "auth_allowed_emails";
 const SESSION_DAYS = 14;
@@ -118,8 +121,10 @@ const adminEmails = (env: AuthEnv) => {
 const isAllowed = async (env: AuthEnv, email: string) =>
     (await allowedEmails(env)).includes(email.toLowerCase());
 
+const isLocalAdmin = (email: string) => email.toLowerCase() === LOCAL_ADMIN_EMAIL;
+
 const isAdmin = (env: AuthEnv, email: string) =>
-    adminEmails(env).includes(email.toLowerCase());
+    isLocalAdmin(email) || adminEmails(env).includes(email.toLowerCase());
 
 type SessionPayload = AuthUser & { exp: number };
 
@@ -146,7 +151,7 @@ const readSession = async (env: AuthEnv, request: Request): Promise<AuthUser | n
     try {
         const payload = JSON.parse(b64urlToUtf8(body)) as SessionPayload;
         if (!payload?.email || typeof payload.exp !== "number" || payload.exp < Date.now()) return null;
-        if (!(await isAllowed(env, payload.email))) return null;
+        if (!(await isAllowed(env, payload.email)) && !isLocalAdmin(payload.email)) return null;
         return {
             email: String(payload.email).toLowerCase(),
             name: String(payload.name ?? payload.email),
@@ -202,43 +207,84 @@ const mailboxesFromSlot = (slot: unknown): GmailTokenRecord[] => {
     return isGmailToken(slot) ? [slot] : [];
 };
 
-export const listGmailMailboxes = async (env: AuthEnv, ownerEmail: string): Promise<GmailTokenRecord[]> => {
-    const all = await readGmailTokens(env);
-    return mailboxesFromSlot(all[ownerEmail.toLowerCase()]);
+const preferGmailToken = (prev: GmailTokenRecord, next: GmailTokenRecord): GmailTokenRecord => {
+    const prevRefresh = Boolean(prev.refreshToken);
+    const nextRefresh = Boolean(next.refreshToken);
+    const newer = (next.updatedAt || 0) >= (prev.updatedAt || 0);
+    const winner = nextRefresh && !prevRefresh ? next : !nextRefresh && prevRefresh ? prev : newer ? next : prev;
+    const other = winner === next ? prev : next;
+    return {
+        ...winner,
+        refreshToken: winner.refreshToken || other.refreshToken,
+        accessToken: winner.accessToken || other.accessToken,
+        accessExp: winner.accessExp ?? other.accessExp,
+    };
 };
 
-export const getGmailToken = async (env: AuthEnv, ownerEmail: string, mailbox?: string): Promise<GmailTokenRecord | null> => {
+const collectGmailMailboxes = (all: Record<string, unknown>): GmailTokenRecord[] => {
+    const byMailbox = new Map<string, GmailTokenRecord>();
+    for (const slot of Object.values(all)) {
+        for (const rec of mailboxesFromSlot(slot)) {
+            const key = rec.mailbox.toLowerCase();
+            const next = { ...rec, mailbox: key };
+            const prev = byMailbox.get(key);
+            byMailbox.set(key, prev ? preferGmailToken(prev, next) : next);
+        }
+    }
+    return [...byMailbox.values()].sort((a, b) => a.mailbox.localeCompare(b.mailbox));
+};
+
+const ownersFromTokens = (all: Record<string, unknown>): string[] => {
+    const keys = Object.keys(all).map((key) => key.toLowerCase()).filter((key) => key.includes("@"));
+    const shared = all.__shared__;
+    const remembered = shared && typeof shared === "object" && !Array.isArray(shared)
+        ? (shared as { owners?: unknown }).owners
+        : [];
+    const extra = Array.isArray(remembered)
+        ? remembered.filter((value): value is string => typeof value === "string").map((value) => value.toLowerCase()).filter((value) => value.includes("@"))
+        : [];
+    return [...new Set([...keys, ...extra])];
+};
+
+export const listGmailTokenOwners = async (env: AuthEnv): Promise<string[]> => ownersFromTokens(await readGmailTokens(env));
+
+export const listGmailMailboxes = async (env: AuthEnv, _ownerEmail?: string): Promise<GmailTokenRecord[]> => {
+    const all = await readGmailTokens(env);
+    return collectGmailMailboxes(all);
+};
+
+export const getGmailToken = async (env: AuthEnv, ownerEmail?: string, mailbox?: string): Promise<GmailTokenRecord | null> => {
     const list = await listGmailMailboxes(env, ownerEmail);
     if (!mailbox) return list[0] ?? null;
     const key = mailbox.toLowerCase();
     return list.find((rec) => rec.mailbox.toLowerCase() === key) ?? null;
 };
 
-const writeGmailMailboxes = async (env: AuthEnv, ownerEmail: string, list: GmailTokenRecord[]) => {
+const writeGmailMailboxes = async (env: AuthEnv, list: GmailTokenRecord[]) => {
     const kv = env.DOMAIN_SALE_MARKS;
     if (!kv) throw new Error("KV is not bound.");
-    const all = await readGmailTokens(env);
-    const key = ownerEmail.toLowerCase();
-    if (!list.length) delete all[key];
-    else {
-        const mailboxes: Record<string, GmailTokenRecord> = {};
-        for (const rec of list) mailboxes[rec.mailbox.toLowerCase()] = { ...rec, mailbox: rec.mailbox.toLowerCase() };
-        all[key] = { mailboxes };
+    if (!list.length) {
+        await kv.put(KV_GMAIL_TOKENS, JSON.stringify({}));
+        return;
     }
-    await kv.put(KV_GMAIL_TOKENS, JSON.stringify(all));
+    const mailboxes: Record<string, GmailTokenRecord> = {};
+    for (const rec of list) mailboxes[rec.mailbox.toLowerCase()] = { ...rec, mailbox: rec.mailbox.toLowerCase() };
+    const owners = ownersFromTokens(await readGmailTokens(env));
+    await kv.put(KV_GMAIL_TOKENS, JSON.stringify({ __shared__: { mailboxes, owners } }));
 };
 
 export const saveGmailToken = async (env: AuthEnv, ownerEmail: string, rec: GmailTokenRecord | null, mailbox?: string) => {
     const list = await listGmailMailboxes(env, ownerEmail);
     if (!rec) {
         const drop = (mailbox || "").trim().toLowerCase();
-        await writeGmailMailboxes(env, ownerEmail, drop ? list.filter((item) => item.mailbox.toLowerCase() !== drop) : []);
+        await writeGmailMailboxes(env, drop ? list.filter((item) => item.mailbox.toLowerCase() !== drop) : []);
         return;
     }
     const key = rec.mailbox.toLowerCase();
+    const prev = list.find((item) => item.mailbox.toLowerCase() === key);
     const next = list.filter((item) => item.mailbox.toLowerCase() !== key);
-    next.push({ ...rec, mailbox: key });
-    await writeGmailMailboxes(env, ownerEmail, next);
+    next.push({ ...rec, mailbox: key, refreshToken: rec.refreshToken || prev?.refreshToken });
+    await writeGmailMailboxes(env, next);
 };
 
 const startOAuth = async (request: Request, env: AuthEnv, intent: "login" | "gmail") => {
@@ -366,6 +412,32 @@ const googleCallback = async (request: Request, env: AuthEnv) => {
     return res;
 };
 
+const sha256Hex = async (value: string) => {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+
+const handlePasswordLogin = async (request: Request, env: AuthEnv) => {
+    if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
+    let body: { user?: string; password?: string } = {};
+    try {
+        body = (await request.json()) as { user?: string; password?: string };
+    } catch {
+        return json({ error: "Invalid JSON" }, 400);
+    }
+    const userName = String(body.user ?? "").trim().toLowerCase();
+    const passHash = await sha256Hex(String(body.password ?? ""));
+    const userOk = timingSafeEqual(userName, LOCAL_ADMIN_USER);
+    const passOk = timingSafeEqual(passHash, LOCAL_ADMIN_PASS_SHA256);
+    if (!userOk || !passOk) return json({ error: "Sai tài khoản hoặc mật khẩu." }, 401);
+
+    const user: AuthUser = { email: LOCAL_ADMIN_EMAIL, name: "Admin", picture: "" };
+    const session = await signSession(env, user);
+    const res = json({ ok: true, user });
+    res.headers.append("Set-Cookie", `${SESSION_COOKIE}=${session}; ${cookieAttrs(request, SESSION_DAYS * 86400)}`);
+    return res;
+};
+
 const handleMe = async (request: Request, env: AuthEnv) => {
     const user = await readSession(env, request);
     if (!user) return json({ user: null }, 401);
@@ -461,6 +533,7 @@ export async function handleGoogleAuthApi(request: Request, env: unknown): Promi
     const wenv = env as AuthEnv;
     const path = new URL(request.url).pathname;
 
+    if (path === "/api/auth/password") return handlePasswordLogin(request, wenv);
     if (path === "/api/auth/google") return startGoogle(request, wenv);
     if (path === "/api/auth/gmail") return startGmail(request, wenv);
     if (path === "/api/auth/google/callback") return googleCallback(request, wenv);

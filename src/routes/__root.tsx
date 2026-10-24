@@ -255,6 +255,7 @@ function RootComponent() {
     { to: "/gmc-salary", labelKey: "gmcSalaryTitle" },
     { to: "/dash-info", labelKey: "dashInfo" },
     { to: "/reg-kpi", labelKey: "regKpi" },
+    { to: "/web-shield-manage", labelKey: "webShieldManage" },
     { to: "/web-kpi", labelKey: "webKpi" },
     { to: "/web-shield-kpi", labelKey: "webShieldKpi" },
     { to: "/invoices", labelKey: "chiPhi" },

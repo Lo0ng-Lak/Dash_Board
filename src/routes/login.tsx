@@ -6,7 +6,7 @@ import { Label } from "../components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { AlertCircle, Lock, Mail } from "lucide-react";
-import { fetchAuthMe, writeAuthToken } from "@/lib/authSession";
+import { fetchAuthMe } from "@/lib/authSession";
 
 export const Route = createFileRoute("/login")({
     component: LoginPage,
@@ -60,20 +60,30 @@ function LoginPage() {
         window.location.href = "/api/auth/google";
     };
 
-    const handleFallbackLogin = async (e: React.FormEvent) => {
+    const handlePasswordLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
         setIsLoading(true);
         try {
-            const ADMIN_EMAIL = "admin";
-            const ADMIN_PASS = "reg@egeadcompany";
-            await new Promise((resolve) => setTimeout(resolve, 400));
-            if (email === ADMIN_EMAIL && password === ADMIN_PASS) {
-                writeAuthToken({ email: "admin@local", name: "Admin", picture: "" });
-                navigate({ to: "/customers" });
-            } else {
-                setError("Sai tài khoản dự phòng.");
+            const res = await fetch("/api/auth/password", {
+                method: "POST",
+                credentials: "include",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ user: email.trim(), password }),
+            });
+            const json = (await res.json()) as { error?: string };
+            if (!res.ok) {
+                setError(json.error || "Sai tài khoản hoặc mật khẩu.");
+                return;
             }
+            const user = await fetchAuthMe();
+            if (!user) {
+                setError("Đăng nhập được nhưng không tạo được phiên.");
+                return;
+            }
+            navigate({ to: "/customers" });
+        } catch {
+            setError("Không đăng nhập được. Thử lại.");
         } finally {
             setIsLoading(false);
         }
@@ -135,13 +145,12 @@ function LoginPage() {
                     </button>
 
                     <p className="text-center text-xs text-muted-foreground">
-                        Chỉ Gmail đã được cấp quyền mới vào được hệ thống.
+                        Đăng nhập bằng Gmail đã cấp quyền, hoặc bằng tài khoản bên dưới.
                     </p>
 
-                    {!googleReady && (
-                        <form onSubmit={handleFallbackLogin} className="space-y-4 pt-2 border-t border-border">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600 text-center">
-                                Google chưa cấu hình — đăng nhập dự phòng
+                    <form onSubmit={handlePasswordLogin} className="space-y-4 pt-2 border-t border-border">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-center">
+                                Hoặc đăng nhập bằng tài khoản
                             </p>
                             <div className="space-y-2">
                                 <Label htmlFor="email" className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground ml-1">
@@ -176,10 +185,9 @@ function LoginPage() {
                                 </div>
                             </div>
                             <Button type="submit" className="h-12 w-full rounded-xl bg-primary font-semibold" disabled={isLoading}>
-                                Login to System
+                                Đăng nhập
                             </Button>
                         </form>
-                    )}
                     <p className="text-center text-[10px] font-medium text-muted-foreground/70 uppercase tracking-widest">
                         © 2026 Egead Company. All rights reserved.
                     </p>

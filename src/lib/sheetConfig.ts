@@ -48,3 +48,9 @@ export const WEB_SHIELD_SHEETS = [
     { id: "webshield-moi", name: "Webshield mới", gid: "1444001639" },
     { id: "web-quoc-anh", name: "Web Quốc Anh", gid: "1857507308" },
 ] as const;
+
+/** Infor Web — hai tab quản lý set up */
+export const WEB_SHIELD_MANAGE_SHEETS = [
+    { id: "phuong", name: "Web Shield Phương", gid: "1444001639" },
+    { id: "quoc-anh", name: "Web Shield Quốc Anh", gid: "1857507308" },
+] as const;

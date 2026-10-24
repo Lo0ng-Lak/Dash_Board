@@ -1,5 +1,6 @@
 import {
     listGmailMailboxes,
+    listGmailTokenOwners,
     readSession,
     refreshGmailAccess,
     saveGmailToken,
@@ -321,15 +322,41 @@ const readScopedCache = async (env: GmailEnv, key: string, legacyKey: string, ma
     return migrated;
 };
 
+const readSharedMailboxCache = async (
+    env: GmailEnv,
+    userEmail: string,
+    mailbox: string,
+    ownKey: string,
+    ownLegacyKey: string,
+    keyForOwner: (owner: string) => string,
+    legacyForOwner: (owner: string) => string,
+): Promise<BillsCache | null> => {
+    const own = await readScopedCache(env, ownKey, ownLegacyKey, mailbox);
+    if (own) return own;
+    const owners = await listGmailTokenOwners(env as never);
+    for (const owner of owners) {
+        if (owner === userEmail.toLowerCase()) continue;
+        const hit = await readScopedCache(env, keyForOwner(owner), legacyForOwner(owner), mailbox);
+        if (!hit) continue;
+        const copied = { ...hit, mailbox: mailbox.toLowerCase() };
+        await writeBillsCache(env, ownKey, copied);
+        return copied;
+    }
+    return null;
+};
+
 const deleteBillsCache = async (env: GmailEnv, owner: string, mailbox?: string) => {
     const kv = env.DOMAIN_SALE_MARKS;
     if (!kv) return;
     const boxes = mailbox
         ? [mailbox.toLowerCase()]
         : (await listGmailMailboxes(env as never, owner)).map((rec) => rec.mailbox.toLowerCase());
-    for (const box of boxes) {
-        await kv.put(cacheKeyOf(owner, box, 2026, 400), JSON.stringify(null));
-        await kv.put(orderCacheKeyOf(owner, box, 2026), JSON.stringify(null));
+    const owners = [...new Set([owner.toLowerCase(), ...(await listGmailTokenOwners(env as never))])];
+    for (const who of owners) {
+        for (const box of boxes) {
+            await kv.put(cacheKeyOf(who, box, 2026, 400), JSON.stringify(null));
+            await kv.put(orderCacheKeyOf(who, box, 2026), JSON.stringify(null));
+        }
     }
     const legacyBills = await readBillsCache(env, legacyBillsKey(owner, 2026, 400));
     if (!mailbox || !legacyBills?.mailbox || legacyBills.mailbox.toLowerCase() === mailbox.toLowerCase()) {
@@ -441,7 +468,15 @@ const listBills = async (request: Request, env: GmailEnv, user: AuthUser) => {
     const parts = await Promise.all(selected.map(async (box) => {
         const cacheKey = cacheKeyOf(user.email, box.mailbox, year, days);
         if (!refresh) {
-            const cached = await readScopedCache(env, cacheKey, legacyBillsKey(user.email, year, days), box.mailbox);
+            const cached = await readSharedMailboxCache(
+                env,
+                user.email,
+                box.mailbox,
+                cacheKey,
+                legacyBillsKey(user.email, year, days),
+                (owner) => cacheKeyOf(owner, box.mailbox, year, days),
+                (owner) => legacyBillsKey(owner, year, days),
+            );
             if (cached) {
                 return {
                     bills: applyMarks(cached.bills, marks).map(withGmailLink),
@@ -564,7 +599,15 @@ const listOrders = async (request: Request, env: GmailEnv, user: AuthUser) => {
     const parts = await Promise.all(selected.map(async (box) => {
         const cacheKey = orderCacheKeyOf(user.email, box.mailbox, year);
         if (!refresh) {
-            const cached = await readScopedCache(env, cacheKey, legacyOrdersKey(user.email, year), box.mailbox);
+            const cached = await readSharedMailboxCache(
+                env,
+                user.email,
+                box.mailbox,
+                cacheKey,
+                legacyOrdersKey(user.email, year),
+                (owner) => orderCacheKeyOf(owner, box.mailbox, year),
+                (owner) => legacyOrdersKey(owner, year),
+            );
             if (cached && Array.isArray(ordersOfCache(cached))) {
                 return {
                     orders: ordersOfCache(cached).map(withGmailLink),
