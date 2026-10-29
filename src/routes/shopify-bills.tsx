@@ -8,6 +8,8 @@ import { DevKpiTabs } from "@/components/dev-kpi-tabs";
 import { getGMCRegData, getTongHopWebRegs, parseGmcSusKind } from "@/lib/dataService";
 import type { BillKind, BillMark, ShopifyEmailBill } from "@/lib/gmailShopifyApi";
 import { GmailMailboxPicker } from "@/components/gmail-mailbox-picker";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 
 type GmcNote = "xanh" | "sus";
 
@@ -373,6 +375,23 @@ function ShopifyBillsPage() {
                                         {t("shopifyBillsCachedAt")} {new Date(billsQ.data.fetchedAt).toLocaleString("vi-VN")}
                                     </span>
                                 ) : null}
+                                <ExportExcelButton
+                                    disabled={filtered.length === 0}
+                                    onClick={() => downloadExcel(`shopify-bills-${month === "all" ? YEAR : month}.xlsx`, [{
+                                        name: "Bills",
+                                        rows: filtered.map((b) => ({
+                                            [t("shopifyBillsDate")]: fmtDate(b.date),
+                                            [t("shopifyGmailCol")]: b.mailbox,
+                                            [t("shopifyBillsShop")]: b.shop,
+                                            [t("shopifyBillsReg")]: lookupBySlug(b, regByDomain) || "",
+                                            [t("shopifyBillsGmcNote")]: gmcNoteOf(b, gmcNotes) || "",
+                                            [t("shopifyBillsSubject")]: b.subject,
+                                            [t("shopifyBillsKind")]: t(`shopifyBillsKind_${b.kind}`),
+                                            [t("shopifyBillsAmount")]: b.amount ?? "",
+                                            "Link Gmail": b.gmailUrl,
+                                        })),
+                                    }])}
+                                />
                                 <button
                                     type="button"
                                     disabled={refreshMut.isPending}

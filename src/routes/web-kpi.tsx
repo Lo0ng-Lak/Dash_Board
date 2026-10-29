@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import { getAllDataWeb, WebRecord, getWebStatusBucket, isWebKpiRecord } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 import { DevKpiTabs } from "@/components/dev-kpi-tabs";
 import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
@@ -327,6 +329,31 @@ function WebKPIPage() {
                             {t("dashboardSubTitle", "Track website completion status by dev & month.")}
                         </p>
                     </div>
+                    <ExportExcelButton
+                        disabled={tableData.length === 0}
+                        onClick={() => downloadExcel("kpi-web-gmc.xlsx", [
+                            {
+                                name: "Tong hop",
+                                rows: tableData.map((row) => ({
+                                    [t("tableHeaderDev", "Dev")]: row.dev,
+                                    [t("tableHeaderMonth", "Month")]: row.month,
+                                    [t("tableHeaderSites", "Sites")]: row.count,
+                                    [t("tableHeaderDomains", "Domains")]: row.websites.join(", "),
+                                })),
+                            },
+                            {
+                                name: "Chi tiet",
+                                rows: zoneBRecords.map((r, i) => ({
+                                    STT: i + 1,
+                                    Domain: r.domain,
+                                    Dev: r.dev,
+                                    [t("tableHeaderMonth", "Month")]: r.month || "",
+                                    [t("status")]: r.status,
+                                    "Ngay hoan thanh": r.rawCompletedDate || "",
+                                })),
+                            },
+                        ])}
+                    />
                 </div>
 
                 <div className="space-y-2">

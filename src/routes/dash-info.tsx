@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { clearInfoBoCache, getInfoBoData, InfoBoBatch, InfoBoOwnerStats, InfoBoRecord, InfoBoStats, parseKhangStatus } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 
 export const Route = createFileRoute("/dash-info")({
   component: DashInfoPage,
@@ -137,14 +139,33 @@ function DashInfoPage() {
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={isFetching}
-              className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 transition-colors"
-            >
-              {isFetching ? "Đang tải..." : "Làm mới"}
-            </button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <ExportExcelButton
+                disabled={filtered.length === 0}
+                onClick={() => downloadExcel("dash-info.xlsx", [{
+                  name: "Info",
+                  rows: filtered.map((item) => ({
+                    STT: item.stt,
+                    Ten: item.tenReg,
+                    "Info ca nhan": item.infoCaNhan,
+                    Web: item.web,
+                    Dev: item.dev,
+                    "Loai Doc": item.loaiDoc,
+                    "Doc DN": item.docDoanhNghiep,
+                    "Trang thai": item.trangThai,
+                    "Khang dot 2": item.khangDot2,
+                  })),
+                }])}
+              />
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={isFetching}
+                className="h-10 px-4 text-sm font-medium rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              >
+                {isFetching ? "Đang tải..." : "Làm mới"}
+              </button>
+            </div>
             {lastUpdated && (
               <p className="text-xs text-slate-400">
                 Cập nhật lúc {lastUpdated} · tự động mỗi 30s

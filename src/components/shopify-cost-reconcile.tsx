@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState } from "react";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -320,6 +322,46 @@ export function ShopifyCostReconcile() {
                 ? ` · ${cardFormat === "airwallex" ? t("shopifyCostFormatAirwallex") : t("shopifyCostFormatCard")}`
                 : null}
             </span>
+          )}
+          {hasResult && (
+            <ExportExcelButton
+              disabled={filteredCount === 0 && merchantGroups.length === 0}
+              onClick={() => downloadExcel("doi-chieu-chi-phi.xlsx", [
+                {
+                  name: "Nhom",
+                  rows: merchantGroups.map((g) => ({
+                    [t("shopifyCostMerchantGroup")]: g.name,
+                    [t("shopifyCostNotedMoney")]: g.notedUsd,
+                    [t("shopifyCostUnnotedMoney")]: g.unnotedUsd,
+                    [t("shopifyCostTotalMoney")]: g.totalUsd,
+                    [t("records")]: g.count,
+                  })),
+                },
+                {
+                  name: cardResult ? "The" : "Chi phi",
+                  rows: cardResult
+                    ? filteredCards.map((e) => ({
+                        [t("thPaymentDate")]: e.transactionDate || "",
+                        [t("shopifyCostTxnId")]: e.transactionId,
+                        [t("shopifyCostCardName")]: e.cardName || e.cardNickname || "",
+                        [t("shopifyCostCardNo")]: e.cardLast4 ? `****${e.cardLast4}` : e.cardNo || "",
+                        [t("shopifyCostMerchant")]: e.merchantName || "",
+                        [t("status")]: e.status || "",
+                        [t("thAmount")]: e.netAmount,
+                        Currency: e.currency || "",
+                      }))
+                    : filteredExpenses.map((e) => ({
+                        [t("thPaymentDate")]: e.ngayThanhToan || "",
+                        [t("thRegistrant")]: e.tenReg || "",
+                        [t("thExpenseType")]: e.loaiChiPhi || "",
+                        [t("thWebsite")]: e.tenWeb || "",
+                        USD: e.chiPhiUSD || "",
+                        VND: e.chiPhiVND || "",
+                        USDT: e.chiPhiUSDT || "",
+                      })),
+                },
+              ])}
+            />
           )}
           {(cardTxns || expenses) && (
             <button

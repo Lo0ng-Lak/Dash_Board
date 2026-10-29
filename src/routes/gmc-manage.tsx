@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Fragment, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DevKpiTabs } from "@/components/dev-kpi-tabs";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 import { getGMCRegData, isValidGmcWebDomain, parseGmcSusKind } from "@/lib/dataService";
 import type { ShopifyEmailBill } from "@/lib/gmailShopifyApi";
 import { parseDmyDate } from "@/lib/kpiWeek";
@@ -208,9 +210,41 @@ function GmcManagePage() {
   return (
     <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight">{t("gmcManageTitle")}</h1>
-          <p className="text-sm font-medium text-slate-500">{t("gmcManageDesc")}</p>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tight">{t("gmcManageTitle")}</h1>
+            <p className="text-sm font-medium text-slate-500">{t("gmcManageDesc")}</p>
+          </div>
+          {!isLoading && (
+            <ExportExcelButton
+              disabled={filtered.length === 0}
+              onClick={() => downloadExcel("quan-ly-gmc.xlsx", [
+                {
+                  name: "Theo nguoi",
+                  rows: byPerson.map((row) => ({
+                    [t("gmcManageColReg")]: row.name,
+                    [t("gmcManageUnique")]: row.count,
+                  })),
+                },
+                {
+                  name: "GMC xanh",
+                  rows: filtered.map((item, i) => {
+                    const plan = planBySlug.get(slugKey(item.domain));
+                    return {
+                      STT: i + 1,
+                      Domain: item.domain,
+                      [t("gmcManageColType")]: typeLabel(item.webType),
+                      [t("shopifyPlanFee")]: plan?.latest ?? "",
+                      [t("gmcManageColReg")]: item.dev || "",
+                      [t("gmcManageColDate")]: item.dateGMC || "",
+                      [t("gmcManageColDays")]: item.daysGreen || "",
+                      [t("gmcManageColStatus")]: item.status || "Xanh",
+                    };
+                  }),
+                },
+              ])}
+            />
+          )}
         </div>
 
         {isLoading ? (

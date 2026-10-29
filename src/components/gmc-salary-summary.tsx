@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fmtMonthShort, getCurrentMonthKey, shiftMonthKey } from "@/lib/kpiWeek";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 
 export interface GmcSalaryRow {
   domain?: string;
@@ -265,6 +267,7 @@ export function GmcSalarySummary({ rows, parseMonth }: GmcSalarySummaryProps) {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap gap-2">
         {(["reg", "web"] as const).map((mode) => {
           const active = payMode === mode;
@@ -283,6 +286,47 @@ export function GmcSalarySummary({ rows, parseMonth }: GmcSalarySummaryProps) {
             </button>
           );
         })}
+      </div>
+        <ExportExcelButton
+          onClick={() => {
+            const staff = payMode === "reg"
+              ? tableData.groups.flatMap((group) => group.employeeRows)
+              : tableData.webEmployeeRows;
+            downloadExcel(`luong-${payMode}-${monthKey}.xlsx`, [
+              {
+                name: "Tong ket",
+                rows: staff.map((row) => ({
+                  [t("gmcKpiColEmployee")]: row.label,
+                  [t("gmcSalaryColThisMonth")]: row.thisMonth,
+                  [t("gmcSalaryCol1to3")]: row.aged,
+                  [t("gmcSalaryColOver3")]: row.over3,
+                  [t("gmcSalaryColTotal")]: row.total,
+                })),
+              },
+              {
+                name: "Domain",
+                rows: payMode === "reg"
+                  ? tableData.domains.map((row, index) => ({
+                      STT: index + 1,
+                      [t("gmcSalaryColDomain")]: row.domain,
+                      REG: row.employee,
+                      [t("gmcSalaryColDate")]: row.dateGMC,
+                      [t("gmcSalaryColDays")]: row.days,
+                      [t("gmcSalaryColGroup")]: bucketLabel(row.bucket),
+                    }))
+                  : tableData.webDomains.map((row, index) => ({
+                      STT: index + 1,
+                      [t("gmcSalaryColDomain")]: row.domain,
+                      DEV: row.dev,
+                      REG: row.reg,
+                      [t("gmcSalaryColDate")]: row.dateGMC,
+                      [t("gmcSalaryColDays")]: row.days,
+                      [t("gmcSalaryColGroup")]: bucketLabel(row.bucket),
+                    })),
+              },
+            ]);
+          }}
+        />
       </div>
 
       <div className="space-y-1">

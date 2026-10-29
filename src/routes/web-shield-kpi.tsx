@@ -3,6 +3,8 @@ import { useEffect, useState, useMemo } from "react";
 import { getWebShieldData, WebShieldRecord } from "@/lib/dataService";
 import { WEB_SHIELD_SHEETS } from "@/lib/sheetConfig";
 import { Pagination } from "@/components/pagination";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 import { DevKpiTabs } from "@/components/dev-kpi-tabs";
 import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
@@ -312,6 +314,33 @@ function WebShieldKpiPage() {
                             {t("webShieldSubTitle", "Tổng 3 sheet: Shield + Webshield mới + Web Quốc Anh.")}
                         </p>
                     </div>
+                    <ExportExcelButton
+                        disabled={tableData.length === 0}
+                        onClick={() => downloadExcel("kpi-web-shield.xlsx", [
+                            {
+                                name: "Tong hop",
+                                rows: tableData.map((row) => ({
+                                    [t("tableHeaderDev", "Dev")]: row.dev,
+                                    [t("tableHeaderMonth", "Month")]: row.month,
+                                    [t("tableHeaderSites", "Sites")]: row.count,
+                                    [t("tableHeaderDomains", "Domains")]: row.websites.join(", "),
+                                })),
+                            },
+                            {
+                                name: "Chi tiet",
+                                rows: zoneBRecords.map((r, i) => ({
+                                    STT: i + 1,
+                                    Sheet: r.sheetName,
+                                    Web: r.web,
+                                    Dev: r.dev,
+                                    Owner: r.owner,
+                                    [t("tableHeaderMonth", "Month")]: r.month || "",
+                                    [t("status")]: r.webStatus,
+                                    Ngay: r.ngay,
+                                })),
+                            },
+                        ])}
+                    />
                 </div>
 
                 <div className="space-y-2">

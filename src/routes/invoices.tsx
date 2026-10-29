@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { getChiPhiExpenses, ExpenseRecord } from "@/lib/dataService";
 import { Pagination } from "@/components/pagination";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { useTranslation } from "react-i18next";
 import {
@@ -319,9 +321,31 @@ function ChiPhiPage() {
     <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto space-y-8">
 
-        <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("chiPhiTitle")}</h1>
-          <p className="text-slate-500 font-medium text-sm">{t("chiPhiDesc")}</p>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("chiPhiTitle")}</h1>
+            <p className="text-slate-500 font-medium text-sm">{t("chiPhiDesc")}</p>
+          </div>
+          <ExportExcelButton
+            disabled={filtered.length === 0}
+            onClick={() => downloadExcel("chi-phi-gmc.xlsx", [{
+              name: "Chi phi",
+              rows: filtered.map((e, i) => ({
+                STT: i + 1,
+                [t("thRegistrant")]: e.tenReg,
+                [t("thType")]: e.loaiChiPhi,
+                [t("thDate")]: e.ngayThanhToan,
+                [t("thWebsite")]: e.tenWeb,
+                [t("thAdsCard")]: e.tenTheAds,
+                [t("thCardType")]: e.dangThe,
+                USD: e.chiPhiUSD || "",
+                VND: e.chiPhiVND || "",
+                USDT: e.chiPhiUSDT || "",
+                [t("thRefundStatus")]: e.choHoanTien || "",
+                [t("thBill")]: e.billChiPhi,
+              })),
+            }])}
+          />
         </div>
 
         <div className="space-y-2">

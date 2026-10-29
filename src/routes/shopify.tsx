@@ -4,6 +4,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { getShopifyData, ShopifyRecord } from "@/lib/dataService";
 import type { ShopifyEmailBill } from "@/lib/gmailShopifyApi";
 import { Pagination } from "@/components/pagination";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 import { useTranslation } from "react-i18next";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -210,9 +212,29 @@ function ShopifyPage() {
   return (
     <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto space-y-8">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight">{t("shopifyMgmtTitle")}</h1>
-          <p className="text-slate-500 font-medium text-sm">{t("shopifyMgmtDesc")}</p>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tight">{t("shopifyMgmtTitle")}</h1>
+            <p className="text-slate-500 font-medium text-sm">{t("shopifyMgmtDesc")}</p>
+          </div>
+          <ExportExcelButton
+            disabled={filtered.length === 0}
+            onClick={() => downloadExcel("quan-ly-shopify.xlsx", [{
+              name: "Shopify",
+              rows: filtered.map((r, i) => ({
+                STT: i + 1,
+                [t("thRegistrant")]: r.nguoiReg || "",
+                [t("thWebsite")]: r.web,
+                [t("shopifyPlanFee")]: planOf(r.web)?.latest ?? "",
+                [t("shopifyRegDate")]: r.ngayDangKy || "",
+                [t("shopifyExpiryDate")]: r.ngayHetHan || "",
+                [t("shopifyDaysLeft")]: r.isCanceled ? "" : r.daysLeft ?? "",
+                [t("thAdsCard")]: r.the || "",
+                [t("shopifyWebhooks")]: r.thayWebhooks || "",
+                [t("status")]: r.isCanceled ? t("canceled") : isExpiringSoon(r) ? t("expiringSoon") : t("active"),
+              })),
+            }])}
+          />
         </div>
 
         {/* Stats */}

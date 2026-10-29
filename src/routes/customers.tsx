@@ -15,6 +15,8 @@ import { GmcKpi3MonthTable } from "@/components/gmc-kpi-3month-table";
 import { GmcKpiSummaryTable } from "@/components/gmc-kpi-summary-table";
 import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { Pagination } from "../components/pagination";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 import { fmtMonthShort, getCurrentMonthKey, parseDmyDate } from "@/lib/kpiWeek";
 
 const parseGmcMonth = (dateGMC: string): string | null => {
@@ -405,9 +407,35 @@ function GMCPremiumDashboard() {
     <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto space-y-8">
 
-        <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("gmcRegManagement")}</h1>
-          <p className="text-slate-500 font-medium text-sm">{t("gmcSystemDesc")}</p>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">{t("gmcRegManagement")}</h1>
+            <p className="text-slate-500 font-medium text-sm">{t("gmcSystemDesc")}</p>
+          </div>
+          <ExportExcelButton
+            disabled={finalFilteredTableData.length === 0}
+            onClick={() => downloadExcel("gmc-khang.xlsx", [{
+              name: "GMC KHANG",
+              rows: finalFilteredTableData.map((item, i) => {
+                const nc = lookupNc(item.domain);
+                return {
+                  STT: i + 1,
+                  Domain: item.domain,
+                  "Loai web": item.webType || "",
+                  [t("gmcDomainExpiry")]: nc ? formatNamecheapExpires(nc.expires) : "",
+                  [t("assignedStaff")]: item.dev || "",
+                  [t("status")]: item.status || "",
+                  [t("gmcReturnDate")]: item.dateGMC || "",
+                  [t("gmcReturnReport")]: item.reportDateGMC || "",
+                  [t("ageDays")]: calculateGreenDays(item) ?? "",
+                  [t("susDate")]: item.dateSus && item.dateSus !== "—" ? item.dateSus : "",
+                  [t("susReport")]: item.reportDateSus || "",
+                  [t("linkAdsEgead")]: item.linkAdsEgead || "",
+                  [t("adsCost")]: parseCost(item.cost),
+                };
+              }),
+            }])}
+          />
         </div>
 
         {namecheapError && (

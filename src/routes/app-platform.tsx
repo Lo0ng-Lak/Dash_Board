@@ -3,6 +3,8 @@ import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import * as XLSX from "xlsx";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 import type { DoAppDomain, DoAppInfo } from "@/lib/digitaloceanApps";
 
 const isCustomDomain = (d: DoAppDomain) =>
@@ -120,13 +122,30 @@ function AppPlatformPage() {
                         <h1 className="text-3xl font-black tracking-tight">{t("appPlatform")}</h1>
                         <p className="text-slate-500 font-medium text-sm">{t("appPlatformDesc")}</p>
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => refetch()}
-                        className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50"
-                    >
-                        {isFetching ? t("appPlatformRefreshing") : t("appPlatformRefresh")}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                        <ExportExcelButton
+                            disabled={sorted.length === 0}
+                            onClick={() => downloadExcel("app-platform.xlsx", [{
+                                name: "Domains",
+                                rows: sorted.flatMap((app) => app.domains.map((d, i) => ({
+                                    STT: i + 1,
+                                    App: app.name,
+                                    "Live URL": app.liveUrl || "",
+                                    "Web Service": app.webService || "",
+                                    Region: app.region || "",
+                                    Domain: d.domain,
+                                    Loai: d.primary ? "PRIMARY" : d.type,
+                                }))),
+                            }])}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => refetch()}
+                            className="h-10 px-4 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                        >
+                            {isFetching ? t("appPlatformRefreshing") : t("appPlatformRefresh")}
+                        </button>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

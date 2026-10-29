@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getWebShieldManageData, type WebShieldManageRecord } from "@/lib/dataService";
 import { WEB_SHIELD_MANAGE_SHEETS } from "@/lib/sheetConfig";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 
 const fold = (value: string) =>
   value
@@ -76,9 +78,30 @@ function WebShieldManagePage() {
   return (
     <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight">{t("webShieldManageTitle")}</h1>
-          <p className="text-sm font-medium text-slate-500">{t("webShieldManageDesc")}</p>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tight">{t("webShieldManageTitle")}</h1>
+            <p className="text-sm font-medium text-slate-500">{t("webShieldManageDesc")}</p>
+          </div>
+          {!isLoading && (
+            <ExportExcelButton
+              disabled={!activeBoard || activeBoard.rows.length === 0}
+              onClick={() => {
+                if (!activeBoard) return;
+                downloadExcel(`web-shield-${activeBoard.id}.xlsx`, [{
+                  name: activeBoard.name,
+                  rows: activeBoard.rows.map((row, i) => ({
+                    STT: i + 1,
+                    [t("webShieldManageColWeb")]: row.web,
+                    DEV: row.dev,
+                    [t("webShieldManageColPort")]: row.cong,
+                    [t("webShieldManageColWebStatus")]: row.webStatus,
+                    [t("webShieldManageColStatus")]: row.tinhTrang,
+                  })),
+                }]);
+              }}
+            />
+          )}
         </div>
 
         {isLoading ? (

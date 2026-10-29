@@ -8,6 +8,7 @@ import { DevKpiTabs } from "@/components/dev-kpi-tabs";
 import { getTongHopWebRegs } from "@/lib/dataService";
 import type { ShopifyEmailOrder } from "@/lib/gmailShopifyApi";
 import { GmailMailboxPicker } from "@/components/gmail-mailbox-picker";
+import * as XLSX from "xlsx";
 
 const ITEMS = 15;
 const YEAR = 2026;
@@ -195,6 +196,36 @@ function ShopifyOrdersPage() {
     const pageRows = filtered.slice((page - 1) * ITEMS, page * ITEMS);
     const totalUsd = filtered.reduce((s, o) => s + (o.amount || 0), 0);
 
+    const downloadExcel = () => {
+        const sheet = filtered.map((o, i) => ({
+            STT: i + 1,
+            [t("shopifyBillsDate")]: fmtDate(o.date),
+            [t("shopifyGmailCol")]: o.mailbox || "",
+            [t("shopifyBillsDomain")]: o.shop,
+            [t("shopifyBillsReg")]: tenRegOf(o),
+            [t("shopifyOrdersNo")]: o.orderNo,
+            [t("shopifyOrdersCustomer")]: o.customer,
+            [t("shopifyBillsAmount")]: o.amount ?? "",
+            "Link Gmail": o.gmailUrl,
+        }));
+        const ws = XLSX.utils.json_to_sheet(sheet);
+        ws["!cols"] = [
+            { wch: 6 },
+            { wch: 14 },
+            { wch: 28 },
+            { wch: 22 },
+            { wch: 16 },
+            { wch: 18 },
+            { wch: 28 },
+            { wch: 12 },
+            { wch: 42 },
+        ];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Shopify Order");
+        const stamp = month === "all" ? String(YEAR) : month;
+        XLSX.writeFile(wb, `shopify-orders-${stamp}.xlsx`);
+    };
+
     return (
         <div className="min-h-full p-8 text-foreground">
             <div className="max-w-7xl mx-auto space-y-6">
@@ -212,6 +243,14 @@ function ShopifyOrdersPage() {
                                         {t("shopifyBillsCachedAt")} {new Date(ordersQ.data.fetchedAt).toLocaleString("vi-VN")}
                                     </span>
                                 ) : null}
+                                <button
+                                    type="button"
+                                    disabled={filtered.length === 0}
+                                    onClick={downloadExcel}
+                                    className="px-3 py-2 text-sm rounded-xl border border-border bg-card hover:bg-accent disabled:opacity-60"
+                                >
+                                    {t("shopifyOrdersExport")}
+                                </button>
                                 <button
                                     type="button"
                                     disabled={refreshMut.isPending}

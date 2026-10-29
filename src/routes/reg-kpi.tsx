@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 import { getRegKpiData, RegKpiRecord } from "@/lib/dataService";
 import { REG_KPI_SHEETS } from "@/lib/sheetConfig";
 import { Pagination } from "@/components/pagination";
+import { ExportExcelButton } from "@/components/export-excel-button";
+import { downloadExcel } from "@/lib/downloadExcel";
 import { MonthWeeklyKpiBlock } from "@/components/month-weekly-kpi-block";
 import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { aggregateWeekRows, getCurrentMonthKey, parseDmyDate } from "@/lib/kpiWeek";
@@ -160,9 +162,32 @@ function RegKpiPage() {
     <div className="min-h-full p-8 text-foreground">
       <div className="max-w-7xl mx-auto space-y-8">
 
-        <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight">{t("regKpiTitle")}</h1>
-          <p className="text-slate-500 font-medium text-sm">{t("regKpiDesc")}</p>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tight">{t("regKpiTitle")}</h1>
+            <p className="text-slate-500 font-medium text-sm">{t("regKpiDesc")}</p>
+          </div>
+          <ExportExcelButton
+            disabled={filtered.length === 0}
+            onClick={() => downloadExcel("kpi-reg-gmc.xlsx", [{
+              name: "KPI REG",
+              rows: filtered.map((r, i) => ({
+                STT: i + 1,
+                [t("owner")]: r.ownerName,
+                Domain: r.domain,
+                "Loai web": r.webType || "",
+                [t("gmcReturnDate")]: r.dateRegGmc || "",
+                [t("status")]: r.susStatus || "",
+                [`${t("khangRound", { n: 1 })}`]: r.khang1Date || "",
+                [`${t("result")} 1`]: r.ketQua1 || "",
+                [`${t("khangRound", { n: 2 })}`]: r.khang2Date || "",
+                [`${t("result")} 2`]: r.ketQua2 || "",
+                [`${t("khangRound", { n: 3 })}`]: r.khang3Date || "",
+                [`${t("result")} 3`]: r.ketQua3 || "",
+                [t("note")]: r.note || "",
+              })),
+            }])}
+          />
         </div>
 
         <div className="space-y-2">
