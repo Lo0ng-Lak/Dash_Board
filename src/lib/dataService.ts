@@ -4,6 +4,7 @@ import { DEFAULT_SHEET_LINKS, INFO_WEB_SHEET_ID, REG_KPI_SHEETS, VE_BO_SHEET_ID,
 
 const LINK_REBUILD = import.meta.env.VITE_LINK_TAB_REBUILD ?? DEFAULT_SHEET_LINKS.REBUILD;
 const LINK_SHOPIFY = import.meta.env.VITE_LINK_TAB_SHOPIFY ?? DEFAULT_SHEET_LINKS.SHOPIFY;
+const LINK_NEW_INFO_REG = DEFAULT_SHEET_LINKS.NEW_INFO_REG;
 /** Tab KPI TỔNG REG (gid 1734827021) — tránh env local ghi đè nhầm gid khác */
 const KPI_TONG_REG_GID = "1734827021";
 const resolveGmcRegLink = (): string => {
@@ -470,6 +471,42 @@ export const getLatestWebData = async (forceRefresh = false) => {
 };
 
 export type TongHopWebReg = { domain: string; tenReg: string };
+
+const foldSheetHeader = (value: string) =>
+    value
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/\s+/g, " ")
+        .trim();
+
+let cachedNewInfoWebRegs: TongHopWebReg[] | null = null;
+
+/** New Infor Web — cột A là tên reg, domain lấy ở cột Domain Cần Reg lại. */
+export const getNewInfoWebRegs = async (forceRefresh = false): Promise<TongHopWebReg[]> => {
+    if (cachedNewInfoWebRegs && !forceRefresh) return cachedNewInfoWebRegs;
+    try {
+        const sep = LINK_NEW_INFO_REG.includes("?") ? "&" : "?";
+        const text = await fetch(`${LINK_NEW_INFO_REG}${sep}t=${Date.now()}`, { cache: "no-store" }).then((r) => r.text());
+        const matrix = Papa.parse<string[]>(text, { skipEmptyLines: true }).data;
+        const header = (matrix[0] ?? []).map((cell) => String(cell ?? ""));
+        const domainCol = header.findIndex((cell) => foldSheetHeader(cell).includes("domain can reg"));
+        const domainIndex = domainCol >= 0 ? domainCol : 1;
+        const map = new Map<string, TongHopWebReg>();
+        for (const row of matrix.slice(1)) {
+            const tenReg = String(row?.[0] ?? "").trim();
+            const domain = String(row?.[domainIndex] ?? "").trim();
+            if (!tenReg || !domain.includes(".")) continue;
+            map.set(domain.toLowerCase(), { domain, tenReg });
+        }
+        cachedNewInfoWebRegs = [...map.values()];
+        return cachedNewInfoWebRegs;
+    } catch (error) {
+        console.error("getNewInfoWebRegs error:", error);
+        return [];
+    }
+};
 
 let cachedTongHopWeb: TongHopWebReg[] | null = null;
 

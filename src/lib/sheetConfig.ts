@@ -20,6 +20,8 @@ export const DEFAULT_SHEET_LINKS = {
     REBUILD: PUB_CSV(VE_WEB, "724861620"),
     /** New Infor Web — tab Shopify */
     SHOPIFY: PUB_CSV(VE_WEB, "173143003"),
+    /** New Infor Web — tab Domain Cần Reg lại. Cột A là tên reg. */
+    NEW_INFO_REG: PUB_CSV(VE_WEB, "786890067"),
     /** Infor Web — tab Shield (legacy default) */
     INFO_WEB: PUB_CSV(INFO_WEB, "0"),
     /** Về Bờ — KPI TỔNG REG */

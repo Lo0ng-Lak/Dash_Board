@@ -19,9 +19,9 @@ export type AuthUser = {
 };
 
 const SESSION_COOKIE = "egead_session";
-const LOCAL_ADMIN_USER = "admin";
+const LOCAL_ADMIN_USER = "egead_5041";
 const LOCAL_ADMIN_EMAIL = "admin@egead.local";
-const LOCAL_ADMIN_PASS_SHA256 = "4c05d2ec76a943f30fc9f464a570d785e87cb3dba17207d6c978f57cfd1a3058";
+const LOCAL_ADMIN_PASS_SHA256 = "473fe2bc3ef81c6544d7ee013a656b5ed341ead5e6da0da7067d207f35a9416c";
 const STATE_COOKIE = "egead_oauth_state";
 const KV_ALLOW_KEY = "auth_allowed_emails";
 const SESSION_DAYS = 14;

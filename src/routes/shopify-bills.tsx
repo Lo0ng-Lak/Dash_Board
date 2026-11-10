@@ -2,10 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Pagination } from "@/components/pagination";
 import { MonthFilterTabs } from "@/components/month-filter-tabs";
 import { DevKpiTabs } from "@/components/dev-kpi-tabs";
-import { getGMCRegData, getTongHopWebRegs, parseGmcSusKind } from "@/lib/dataService";
+import { getGMCRegData, getNewInfoWebRegs, parseGmcSusKind } from "@/lib/dataService";
 import type { BillKind, BillMark, ShopifyEmailBill } from "@/lib/gmailShopifyApi";
 import { GmailMailboxPicker } from "@/components/gmail-mailbox-picker";
 import { ExportExcelButton } from "@/components/export-excel-button";
@@ -13,7 +12,6 @@ import { downloadExcel } from "@/lib/downloadExcel";
 
 type GmcNote = "xanh" | "sus";
 
-const ITEMS = 12;
 const YEAR = 2026;
 
 type BillsResponse = {
@@ -97,7 +95,6 @@ function ShopifyBillsPage() {
     const [kind, setKind] = useState<"all" | BillKind | "open">("all");
     const [gmc, setGmc] = useState<"all" | "xanh" | "sus" | "none">("all");
     const [reg, setReg] = useState("all");
-    const [page, setPage] = useState(1);
     const [box, setBox] = useState("all");
 
     const statusQ = useQuery({
@@ -142,8 +139,8 @@ function ShopifyBillsPage() {
     const gmcNotes = useMemo(() => buildGmcNotes(gmcQ.data ?? []), [gmcQ.data]);
 
     const tongHopQ = useQuery({
-        queryKey: ["tongHopWebRegs"],
-        queryFn: () => getTongHopWebRegs(true),
+        queryKey: ["newInfoWebRegs"],
+        queryFn: () => getNewInfoWebRegs(true),
         staleTime: 60_000,
     });
 
@@ -353,8 +350,6 @@ function ShopifyBillsPage() {
         });
     }, [bills, search, month, kind, gmc, reg, gmcNotes, regByDomain]);
 
-    const pageRows = filtered.slice((page - 1) * ITEMS, page * ITEMS);
-
     const connected = !!statusQ.data?.connected;
     const showMailbox = box === "all" && mailboxes.length > 1;
 
@@ -426,10 +421,7 @@ function ShopifyBillsPage() {
                     <GmailMailboxPicker
                         mailboxes={mailboxes}
                         selected={box}
-                        onSelect={(next) => {
-                            setBox(next);
-                            setPage(1);
-                        }}
+                        onSelect={setBox}
                         addHref="/api/auth/gmail?next=/shopify-bills"
                         addLabel={t("shopifyGmailAdd")}
                         allLabel={t("shopifyGmailAll")}
@@ -463,10 +455,7 @@ function ShopifyBillsPage() {
                             items={regTabs}
                             totalCount={yearBills.length}
                             selected={reg}
-                            onSelect={(name) => {
-                                setReg(name);
-                                setPage(1);
-                            }}
+                            onSelect={setReg}
                             allLabel={t("allOwners")}
                         />
                         <div className="grid grid-cols-2 gap-3">
@@ -546,10 +535,7 @@ function ShopifyBillsPage() {
                                         <tr
                                             key={r.month}
                                             className={`border-t border-border/70 cursor-pointer hover:bg-accent/50 ${month === r.month ? "bg-rose-50/80" : ""}`}
-                                            onClick={() => {
-                                                setMonth(r.month);
-                                                setPage(1);
-                                            }}
+                                            onClick={() => setMonth(r.month)}
                                         >
                                             <td className="p-3 font-medium">{fmtMonthLabel(r.month)}</td>
                                             <td className="p-3 text-right">{fmtUSD(r.planUsd)}</td>
@@ -577,10 +563,7 @@ function ShopifyBillsPage() {
                             items={months}
                             totalWithDate={scopedYearBills.length}
                             selected={month}
-                            onSelect={(m) => {
-                                setMonth(m);
-                                setPage(1);
-                            }}
+                            onSelect={setMonth}
                             allLabel={t("allMonths")}
                         />
 
@@ -588,10 +571,7 @@ function ShopifyBillsPage() {
                             items={kindTabs}
                             totalCount={scopedYearBills.length}
                             selected={kind}
-                            onSelect={(name) => {
-                                setKind(name as typeof kind);
-                                setPage(1);
-                            }}
+                            onSelect={(name) => setKind(name as typeof kind)}
                             allLabel={t("shopifyBillsKindAll")}
                         />
 
@@ -599,20 +579,14 @@ function ShopifyBillsPage() {
                             items={gmcTabs}
                             totalCount={gmcTabs.reduce((s, item) => s + item.count, 0)}
                             selected={gmc}
-                            onSelect={(name) => {
-                                setGmc(name as typeof gmc);
-                                setPage(1);
-                            }}
+                            onSelect={(name) => setGmc(name as typeof gmc)}
                             allLabel={t("shopifyBillsGmcAll")}
                         />
 
                         <div className="flex flex-col md:flex-row gap-3">
                             <input
                                 value={search}
-                                onChange={(e) => {
-                                    setSearch(e.target.value);
-                                    setPage(1);
-                                }}
+                                onChange={(e) => setSearch(e.target.value)}
                                 placeholder={t("shopifyBillsSearch")}
                                 className="flex-1 h-11 rounded-xl border border-border bg-card px-3 text-sm"
                             />
@@ -634,7 +608,7 @@ function ShopifyBillsPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {pageRows.map((b) => (
+                                    {filtered.map((b) => (
                                         <tr key={`${b.mailbox}-${b.id}`} className="border-t border-border/70">
                                             <td className="p-3 whitespace-nowrap text-muted-foreground">{fmtDate(b.date)}</td>
                                             {showMailbox && <td className="p-3 text-xs text-muted-foreground break-all">{b.mailbox || "—"}</td>}
@@ -677,7 +651,7 @@ function ShopifyBillsPage() {
                                             </td>
                                         </tr>
                                     ))}
-                                    {pageRows.length === 0 && (
+                                    {filtered.length === 0 && (
                                         <tr>
                                             <td colSpan={showMailbox ? 9 : 8} className="p-8 text-center text-muted-foreground">
                                                 {t("shopifyBillsEmpty")}
@@ -687,13 +661,6 @@ function ShopifyBillsPage() {
                                 </tbody>
                             </table>
                         </div>
-
-                        <Pagination
-                            currentPage={page}
-                            totalItems={filtered.length}
-                            itemsPerPage={ITEMS}
-                            onPageChange={setPage}
-                        />
                     </>
                 )}
 
