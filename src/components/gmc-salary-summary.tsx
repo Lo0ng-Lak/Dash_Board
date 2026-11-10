@@ -77,7 +77,8 @@ const isPayableLink = (linkAds: string | undefined) => {
 
 const isPayableGmc = (row: GmcSalaryRow) => foldName(row.status ?? "") === "xanh" && isPayableLink(row.linkAdsEgead);
 
-/** Cùng cửa sổ 3 tháng. Dưới 20 ngày = New. 20–90 ngày = 1-3 tháng. Trên 90 ngày = chạy trên 3 tháng. */
+/** Dưới 20 ngày = New. 20–90 ngày = 1-3 tháng (2 cột này: ngày về trong 3 tháng gần nhất).
+ *  Trên 90 ngày = chạy trên 3 tháng (ngày về trong 4 tháng gần nhất, vd T10 → T7–T10). */
 const NEW_DAY_LIMIT = 20;
 const OVER3_DAY_LIMIT = 90;
 
@@ -99,7 +100,10 @@ export function GmcSalarySummary({ rows, parseMonth }: GmcSalarySummaryProps) {
     [monthKey],
   );
   const windowSet = useMemo(() => new Set(windowKeys), [windowKeys]);
+  /** Tháng thêm cho cột "chạy trên 3 tháng" (4 tháng gần nhất). */
+  const over3ExtraKey = useMemo(() => shiftMonthKey(monthKey, -3), [monthKey]);
   const rangeLabel = `${fmtMonthShort(windowKeys[0])} – ${fmtMonthShort(windowKeys[2])}`;
+  const over3RangeLabel = `${fmtMonthShort(over3ExtraKey)} – ${fmtMonthShort(windowKeys[2])}`;
 
   const pickerMonths = useMemo(() => {
     const set = new Set<string>([current]);
@@ -137,10 +141,14 @@ export function GmcSalarySummary({ rows, parseMonth }: GmcSalarySummaryProps) {
     rows.forEach((row) => {
       if (!isPayableGmc(row)) return;
       const month = parseMonth(row.dateGMC);
-      if (!month || !windowSet.has(month)) return;
+      if (!month) return;
+      const inMainWindow = windowSet.has(month);
+      if (!inMainWindow && month !== over3ExtraKey) return;
       const days = parseDayCount(row.daysGreen);
       if (days == null) return;
       const bucket = days < NEW_DAY_LIMIT ? "thisMonth" : days <= OVER3_DAY_LIMIT ? "aged" : "over3";
+      // Tháng thứ 4 chỉ tính cho cột chạy trên 3 tháng.
+      if (!inMainWindow && bucket !== "over3") return;
 
       const dev = row.dev?.trim();
       if (!dev) return;
@@ -246,7 +254,7 @@ export function GmcSalarySummary({ rows, parseMonth }: GmcSalarySummaryProps) {
     );
 
     return { groups, extraRows, domains, webEmployeeRows, webTotals, webExtraRows, webDomains };
-  }, [rows, parseMonth, windowSet]);
+  }, [rows, parseMonth, windowSet, over3ExtraKey]);
 
   const bucketLabel = (bucket: "thisMonth" | "aged" | "over3") =>
     bucket === "thisMonth"
@@ -335,8 +343,8 @@ export function GmcSalarySummary({ rows, parseMonth }: GmcSalarySummaryProps) {
         </h1>
         <p className="text-slate-500 font-medium text-sm">
           {payMode === "reg"
-            ? t("gmcSalaryDesc", { month: fmtMonthShort(monthKey), range: rangeLabel })
-            : t("webSalaryDesc", { month: fmtMonthShort(monthKey), range: rangeLabel })}
+            ? t("gmcSalaryDesc", { month: fmtMonthShort(monthKey), range: rangeLabel, over3Range: over3RangeLabel })
+            : t("webSalaryDesc", { month: fmtMonthShort(monthKey), range: rangeLabel, over3Range: over3RangeLabel })}
         </p>
       </div>
 
